@@ -14,7 +14,7 @@ apply_standard_settings(${PLUGIN_NAME})
 
 target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
 target_include_directories(${PLUGIN_NAME} INTERFACE
-  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  "${CMAKE_CURRENT_LIST_DIR}/include"
 )
 target_link_libraries(${PLUGIN_NAME} PRIVATE
   flutter
@@ -22,26 +22,39 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
 )
 
 # ---------------------------------------------------------------------
+# Compute absolute path to the plugin package root
+# ---------------------------------------------------------------------
+# CMAKE_CURRENT_LIST_DIR points to:
+# flutter/ephemeral/.plugin_symlinks/flutter_js/linux
+# We want the actual package root:
+get_filename_component(PLUGIN_PACKAGE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+
+# ---------------------------------------------------------------------
 # QuickJS engine sources (upstream)
 # ---------------------------------------------------------------------
-get_filename_component(PLUGIN_ROOT "${CMAKE_CURRENT_LIST_DIR}" ABSOLUTE)
-
 set(QUICKJS_ENGINE_SRC
-    "${PLUGIN_ROOT}/quickjs/upstream/quickjs.c"
-    "${PLUGIN_ROOT}/quickjs/upstream/libquickjs.c"
-)
-set(QUICKJS_BRIDGE_SRC
-    "${PLUGIN_ROOT}/quickjs/bridge/cxx/libfastdev_quickjs_runtime.cpp"
+  "${PLUGIN_PACKAGE_DIR}/linux/quickjs/upstream/quickjs.c"
+  "${PLUGIN_PACKAGE_DIR}/linux/quickjs/upstream/libquickjs.c"
 )
 
+# ---------------------------------------------------------------------
+# QuickJS bridge source (only the required cpp file)
+# ---------------------------------------------------------------------
+set(QUICKJS_BRIDGE_SRC
+  "${PLUGIN_PACKAGE_DIR}/linux/quickjs/bridge/cxx/libfastdev_quickjs_runtime.cpp"
+)
+
+# ---------------------------------------------------------------------
+# Build the combined QuickJS shared library
+# ---------------------------------------------------------------------
 add_library(quickjs_c_bridge_plugin SHARED
-    ${QUICKJS_ENGINE_SRC}
-    ${QUICKJS_BRIDGE_SRC}
+  ${QUICKJS_ENGINE_SRC}
+  ${QUICKJS_BRIDGE_SRC}
 )
 
 target_include_directories(quickjs_c_bridge_plugin PRIVATE
-    "${PLUGIN_ROOT}/quickjs/upstream"
-    "${PLUGIN_ROOT}/quickjs/bridge/cxx"
+  "${PLUGIN_PACKAGE_DIR}/linux/quickjs/upstream"
+  "${PLUGIN_PACKAGE_DIR}/linux/quickjs/bridge/cxx"
 )
 
 target_link_libraries(quickjs_c_bridge_plugin
