@@ -24,7 +24,7 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
 # ---------------------------------------------------------------------
 # QuickJS engine sources (upstream)
 # ---------------------------------------------------------------------
-get_filename_component(PLUGIN_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+get_filename_component(PLUGIN_ROOT "${CMAKE_CURRENT_LIST_DIR}" ABSOLUTE)
 
 set(QUICKJS_ENGINE_SRC
   ${PLUGIN_ROOT}/quickjs/upstream/quickjs.c
