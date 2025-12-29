@@ -27,7 +27,7 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
 # CMAKE_CURRENT_LIST_DIR points to:
 # flutter/ephemeral/.plugin_symlinks/flutter_js/linux
 # We want the actual package root:
-get_filename_component(PLUGIN_PACKAGE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+get_filename_component(PLUGIN_PACKAGE_DIR "${CMAKE_CURRENT_LIST_DIR}" ABSOLUTE)
 
 # ---------------------------------------------------------------------
 # QuickJS engine sources (upstream)
