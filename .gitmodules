@@ -1,3 +1,6 @@
-[submodule "native/quickjs/upstream"]
-	path = native/quickjs/upstream
-	url = https://github.com/bellard/quickjs
+[submodule "linux/quickjs/upstream"]
+	path = linux/quickjs/upstream
+	url = https://github.com/bellard/quickjs.git
+[submodule "linux/quickjs/bridge"]
+	path = linux/quickjs/bridge
+	url = https://github.com/abner/quickjs-c-bridge.git
