@@ -42,16 +42,20 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
 # ---------------------------------------------------------------------
 # QuickJS C bridge (pure C, built for host arch)
 # ---------------------------------------------------------------------
+get_filename_component(PLUGIN_ROOT
+  "${CMAKE_CURRENT_LIST_DIR}/.."
+  ABSOLUTE
+)
 
 add_library(quickjs_c_bridge_plugin SHARED
-  ../native/quickjs/upstream/quickjs.c
-  ../native/quickjs/upstream/libquickjs.c
-  ../native/bridge/quickjs_bridge.c
+  ${PLUGIN_ROOT}/native/quickjs/upstream/quickjs.c
+  ${PLUGIN_ROOT}/native/quickjs/upstream/libquickjs.c
+  ${PLUGIN_ROOT}/native/bridge/quickjs_bridge.c
 )
 
 target_include_directories(quickjs_c_bridge_plugin PRIVATE
-  ../native/quickjs/upstream
-  ../native/bridge
+  ${PLUGIN_ROOT}/native/quickjs/upstream
+  ${PLUGIN_ROOT}/native/bridge
 )
 
 target_link_libraries(quickjs_c_bridge_plugin
