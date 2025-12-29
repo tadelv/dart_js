@@ -1,22 +1,10 @@
 cmake_minimum_required(VERSION 3.10)
+project(flutter_js_plugin LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------
-# Project / plugin setup
+# Flutter plugin core (Dart↔C++ glue)
 # ---------------------------------------------------------------------
-
-set(PROJECT_NAME "flutter_js")
-project(${PROJECT_NAME} LANGUAGES CXX C)
-
-set(PLUGIN_NAME "${PROJECT_NAME}_plugin")
-
-# Let Flutter pick compilers; do NOT hardcode gcc/g++
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-# ---------------------------------------------------------------------
-# Flutter plugin (C++)
-# ---------------------------------------------------------------------
+set(PLUGIN_NAME "flutter_js_plugin")
 
 add_library(${PLUGIN_NAME} SHARED
   flutter_js_plugin.cc
@@ -24,38 +12,45 @@ add_library(${PLUGIN_NAME} SHARED
 
 apply_standard_settings(${PLUGIN_NAME})
 
-set_target_properties(${PLUGIN_NAME} PROPERTIES
-  CXX_VISIBILITY_PRESET hidden
-)
-
 target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
-
 target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
-
 target_link_libraries(${PLUGIN_NAME} PRIVATE
   flutter
   PkgConfig::GTK
 )
 
 # ---------------------------------------------------------------------
-# QuickJS C bridge (pure C, built for host arch)
+# QuickJS engine sources (upstream)
 # ---------------------------------------------------------------------
-get_filename_component(PLUGIN_ROOT
-  "${CMAKE_CURRENT_LIST_DIR}/.."
-  ABSOLUTE
+get_filename_component(PLUGIN_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+
+set(QUICKJS_ENGINE_SRC
+  ${PLUGIN_ROOT}/quickjs/upstream/quickjs.c
+  ${PLUGIN_ROOT}/quickjs/upstream/libquickjs.c
+  ${PLUGIN_ROOT}/quickjs/upstream/quickjs.h
+  ${PLUGIN_ROOT}/quickjs/upstream/libquickjs.h
 )
 
+# ---------------------------------------------------------------------
+# QuickJS bridge source (only the required cpp file)
+# ---------------------------------------------------------------------
+set(QUICKJS_BRIDGE_SRC
+  ${PLUGIN_ROOT}/quickjs/bridge/cxx/libfastdev_quickjs_runtime.cpp
+)
+
+# ---------------------------------------------------------------------
+# Build the combined QuickJS shared library
+# ---------------------------------------------------------------------
 add_library(quickjs_c_bridge_plugin SHARED
-  ${PLUGIN_ROOT}/native/quickjs/upstream/quickjs.c
-  ${PLUGIN_ROOT}/native/quickjs/upstream/libquickjs.c
-  ${PLUGIN_ROOT}/native/bridge/quickjs_bridge.c
+  ${QUICKJS_ENGINE_SRC}
+  ${QUICKJS_BRIDGE_SRC}
 )
 
 target_include_directories(quickjs_c_bridge_plugin PRIVATE
-  ${PLUGIN_ROOT}/native/quickjs/upstream
-  ${PLUGIN_ROOT}/native/bridge
+  ${PLUGIN_ROOT}/quickjs/upstream
+  ${PLUGIN_ROOT}/quickjs/bridge/cxx
 )
 
 target_link_libraries(quickjs_c_bridge_plugin
@@ -72,25 +67,20 @@ set_target_properties(quickjs_c_bridge_plugin PROPERTIES
 # ---------------------------------------------------------------------
 # Tell Flutter to bundle the QuickJS shared library
 # ---------------------------------------------------------------------
-
 set(flutter_qjs_bundled_libraries
   "$<TARGET_FILE:quickjs_c_bridge_plugin>"
   PARENT_SCOPE
 )
 
 # ---------------------------------------------------------------------
-# Bundle install configuration (Flutter standard)
+# Install into Flutter bundle/lib
 # ---------------------------------------------------------------------
-
-set(BUILD_BUNDLE_DIR "${PROJECT_BINARY_DIR}/bundle")
-
+set(BUILD_BUNDLE_DIR "${CMAKE_BINARY_DIR}/bundle")
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)
+  set(CMAKE_INSTALL_PREFIX "${BUILD_BUNDLE_DIR}" CACHE PATH "" FORCE)
 endif()
-
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib")
 
-# Install the QuickJS bridge into the bundle
 install(
   FILES "$<TARGET_FILE:quickjs_c_bridge_plugin>"
   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
