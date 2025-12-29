@@ -27,30 +27,21 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
 get_filename_component(PLUGIN_ROOT "${CMAKE_CURRENT_LIST_DIR}" ABSOLUTE)
 
 set(QUICKJS_ENGINE_SRC
-  ${PLUGIN_ROOT}/quickjs/upstream/quickjs.c
-  ${PLUGIN_ROOT}/quickjs/upstream/libquickjs.c
-  ${PLUGIN_ROOT}/quickjs/upstream/quickjs.h
-  ${PLUGIN_ROOT}/quickjs/upstream/libquickjs.h
+    "${PLUGIN_ROOT}/quickjs/upstream/quickjs.c"
+    "${PLUGIN_ROOT}/quickjs/upstream/libquickjs.c"
 )
-
-# ---------------------------------------------------------------------
-# QuickJS bridge source (only the required cpp file)
-# ---------------------------------------------------------------------
 set(QUICKJS_BRIDGE_SRC
-  ${PLUGIN_ROOT}/quickjs/bridge/cxx/libfastdev_quickjs_runtime.cpp
+    "${PLUGIN_ROOT}/quickjs/bridge/cxx/libfastdev_quickjs_runtime.cpp"
 )
 
-# ---------------------------------------------------------------------
-# Build the combined QuickJS shared library
-# ---------------------------------------------------------------------
 add_library(quickjs_c_bridge_plugin SHARED
-  ${QUICKJS_ENGINE_SRC}
-  ${QUICKJS_BRIDGE_SRC}
+    ${QUICKJS_ENGINE_SRC}
+    ${QUICKJS_BRIDGE_SRC}
 )
 
 target_include_directories(quickjs_c_bridge_plugin PRIVATE
-  ${PLUGIN_ROOT}/quickjs/upstream
-  ${PLUGIN_ROOT}/quickjs/bridge/cxx
+    "${PLUGIN_ROOT}/quickjs/upstream"
+    "${PLUGIN_ROOT}/quickjs/bridge/cxx"
 )
 
 target_link_libraries(quickjs_c_bridge_plugin
