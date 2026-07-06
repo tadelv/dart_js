@@ -2,11 +2,11 @@ import Flutter
 import JavaScriptCore
 import UIKit
 
-public class SwiftFlutterJsPlugin: NSObject, FlutterPlugin {
+public class FlutterJsPlugin: NSObject, FlutterPlugin {
     private var jsEngineMap = [Int: JSContextFoundation]()
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "io.abner.flutter_js", binaryMessenger: registrar.messenger())
-        let instance = SwiftFlutterJsPlugin()
+        let instance = FlutterJsPlugin()
         registrar.addMethodCallDelegate(instance, channel: channel)
     }
 
