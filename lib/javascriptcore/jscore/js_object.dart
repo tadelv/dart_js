@@ -456,8 +456,8 @@ class JSClassDefinition {
   Pointer<NativeFunction<JSObjectRef.JSObjectConvertToTypeCallback>>?
       convertToType;
 
-  Pointer<JSObjectRef.JSClassDefinition>? _nativeDefinition;
-  bool _nativeDefinitionReleased = false;
+  final Map<int, Pointer<JSObjectRef.JSClassDefinition>> _nativeDefinitions =
+      {};
 
   JSClassDefinition({
     this.version = 0,
@@ -510,8 +510,7 @@ class JSClassDefinition {
         hasInstance: hasInstance ?? nullptr,
         convertToType: convertToType ?? nullptr,
       );
-      _nativeDefinition = pointer;
-      _nativeDefinitionReleased = false;
+      _nativeDefinitions[pointer.address] = pointer;
       return pointer;
     } catch (_) {
       if (nativeClassName != nullptr) malloc.free(nativeClassName);
@@ -522,17 +521,16 @@ class JSClassDefinition {
   }
 
   void release(Pointer<JSObjectRef.JSClassDefinition> pointer) {
-    if (pointer == nullptr || pointer != _nativeDefinition) return;
-    if (_nativeDefinitionReleased) return;
-    _nativeDefinitionReleased = true;
-    final nativeClassName = pointer.ref.className;
-    final nativeStaticValues = pointer.ref.staticValues;
-    final nativeStaticFunctions = pointer.ref.staticFunctions;
+    if (pointer == nullptr) return;
+    final nativeDefinition = _nativeDefinitions.remove(pointer.address);
+    if (nativeDefinition == null) return;
+    final nativeClassName = nativeDefinition.ref.className;
+    final nativeStaticValues = nativeDefinition.ref.staticValues;
+    final nativeStaticFunctions = nativeDefinition.ref.staticFunctions;
     JSObjectRef.JSStaticValuePointer.releaseArray(nativeStaticValues);
     JSObjectRef.JSStaticFunctionPointer.releaseArray(nativeStaticFunctions);
     if (nativeClassName != nullptr) malloc.free(nativeClassName);
-    JSObjectRef.JSClassDefinitionPointer.release(pointer);
-    _nativeDefinition = nullptr;
+    JSObjectRef.JSClassDefinitionPointer.release(nativeDefinition);
   }
 }
 

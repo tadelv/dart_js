@@ -68,5 +68,12 @@ void main() {
     expect(emptyStringArray.pointer, nullptr);
     emptyStringArray.release();
     emptyStringArray.release();
+
+    final definition = JSClassDefinition(className: 'multiple');
+    final firstDefinition = definition.create();
+    final secondDefinition = definition.create();
+    definition.release(firstDefinition);
+    definition.release(firstDefinition);
+    definition.release(secondDefinition);
   });
 }

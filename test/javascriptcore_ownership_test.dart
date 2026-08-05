@@ -68,6 +68,23 @@ void main() {
         final withSource = runtime.evaluate('2 + 2', sourceUrl: 'ownership.js');
         expect(withSource.stringResult, '4');
 
+        final contextException = JSValuePointer();
+        try {
+          final failed =
+              runtime.context.evaluate('(', exception: contextException);
+          expect(failed.pointer, nullptr);
+          expect(contextException.pointer.value, isNot(nullptr));
+          expect(
+            runtime.context
+                .evaluate('1 + 1', exception: contextException)
+                .string,
+            '2',
+          );
+          expect(contextException.pointer.value, nullptr);
+        } finally {
+          contextException.release();
+        }
+
         final syntaxIterations = int.tryParse(
               Platform.environment['JSC_SYNTAX_ITERATIONS'] ?? '',
             ) ??
