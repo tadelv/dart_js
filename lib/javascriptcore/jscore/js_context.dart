@@ -16,9 +16,6 @@ class JSContext {
 
   Pointer get pointer => _pointer;
 
-  /// Exception (JSValueRef*) A pointer to a JSValueRef in which to store an exception, if any. Pass NULL if you do not care to store an exception.
-  JSValuePointer exception = JSValuePointer();
-
   JSContext(this._pointer);
 
   /// Creates a global JavaScript execution context.
@@ -115,7 +112,7 @@ class JSContext {
               thisObject == null ? nullptr : thisObject.pointer,
               strings[1],
               startingLineNumber,
-              exception.pointer,
+              nullptr,
             )));
   }
 

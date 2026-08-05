@@ -3,6 +3,8 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter_js/javascriptcore/jscore/js_class.dart';
+import 'package:flutter_js/javascriptcore/jscore/js_object.dart';
 import 'package:flutter_js/javascriptcore/jscore/js_string.dart';
 import 'package:flutter_js/javascriptcore/jscore/js_value.dart';
 import 'package:flutter_js/javascriptcore/jscore_runtime.dart';
@@ -66,6 +68,24 @@ void main() {
         final withSource = runtime.evaluate('2 + 2', sourceUrl: 'ownership.js');
         expect(withSource.stringResult, '4');
 
+        final syntaxIterations = int.tryParse(
+              Platform.environment['JSC_SYNTAX_ITERATIONS'] ?? '',
+            ) ??
+            2;
+        for (var i = 0; i < syntaxIterations; i++) {
+          expect(runtime.evaluate('(').isError, isTrue);
+        }
+
+        final functionResult =
+            runtime.evaluate('(function(value) { return value + 1; })');
+        final argumentResult = runtime.evaluate('41');
+        expect(
+          runtime
+              .callFunction(functionResult.rawResult, argumentResult.rawResult)
+              .stringResult,
+          '42',
+        );
+
         final objectResult = runtime.evaluate('({answer: 42, label: "ok"})');
         final object = JSValue(
           runtime.context,
@@ -73,6 +93,14 @@ void main() {
         ).toObject();
         expect(object.hasProperty('answer'), isTrue);
         expect(object.getProperty('answer').string, '42');
+        final exception = JSValuePointer();
+        try {
+          expect(
+              object.getProperty('answer', exception: exception).string, '42');
+          expect(exception.pointer.value, nullptr);
+        } finally {
+          exception.release();
+        }
         final propertyNames = object.copyPropertyNames();
         try {
           final names = List.generate(
@@ -106,6 +134,15 @@ void main() {
         expect(copiedName.string, 'ownership-test');
         copiedName.release();
         name.release();
+
+        final customClass = JSClass.create(
+          JSClassDefinition(
+            className: 'ownership',
+            staticValues: [JSStaticValue(name: 'value')],
+            staticFunctions: [JSStaticFunction(name: 'function')],
+          ),
+        );
+        customClass.release();
 
         final iterations = int.tryParse(
               Platform.environment['JSC_OWNERSHIP_ITERATIONS'] ?? '',

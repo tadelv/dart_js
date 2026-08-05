@@ -97,7 +97,6 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
 
   @override
   void dispose() {
-    context.exception.release();
     jSGlobalContextRelease(_globalContext);
     jSContextGroupRelease(_contextGroup);
   }
@@ -217,7 +216,7 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
   @override
   JsEvalResult callFunction(Pointer<NativeType>? fn, Pointer<NativeType>? obj) {
     final functionObj = JSValue(context, fn ?? nullptr).toObject();
-    final arguments = JSValuePointer(obj);
+    final arguments = JSValuePointer.array([JSValue(context, obj ?? nullptr)]);
     final exception = JSValuePointer();
     try {
       final result = functionObj.callAsFunction(
