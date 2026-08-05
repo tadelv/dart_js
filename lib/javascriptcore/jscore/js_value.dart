@@ -195,20 +195,26 @@ class JSValue {
   /// Creates a JavaScript value of the string type.
   /// [string] The double to assign to the newly created JSValue.
   JSValue.makeString(this.context, String string)
-      : this.pointer = JSValueRef.jSValueMakeString(
-            context.pointer, JSString.fromString(string).pointer);
+      : this.pointer = JSString.withStrings(
+            [string],
+            (strings) => JSValueRef.jSValueMakeString(
+                context.pointer, strings[0]));
 
   /// Creates a JavaScript value of the symbol type.
   /// [description] A description of the newly created symbol value.
   JSValue.makeSymbol(this.context, String description)
-      : this.pointer = JSValueRef.jSValueMakeSymbol(
-            context.pointer, JSString.fromString(description).pointer);
+      : this.pointer = JSString.withStrings(
+            [description],
+            (strings) => JSValueRef.jSValueMakeSymbol(
+                context.pointer, strings[0]));
 
   /// Creates a JavaScript value from a JSON formatted string.
   /// [string] The JSString containing the JSON string to be parsed.
   JSValue.makeFromJSONString(this.context, String string)
-      : this.pointer = JSValueRef.jSValueMakeFromJSONString(
-            context.pointer, JSString.fromString(string).pointer);
+      : this.pointer = JSString.withStrings(
+            [string],
+            (strings) => JSValueRef.jSValueMakeFromJSONString(
+                context.pointer, strings[0]));
 
   /// Value type
   JSType get type {
@@ -302,14 +308,15 @@ class JSValue {
   }
 
   /// Creates a JavaScript string containing the JSON serialized representation of a JS value.
+  /// The returned JSString is owned by the caller and must be released.
   /// [indent] The number of spaces to indent when nesting.  If 0, the resulting JSON will not contains newlines.  The size of the indent is clamped to 10 spaces.
   /// [exception] A pointer to a JSValueRef in which to store an exception, if any. Pass NULL if you do not care to store an exception.
   JSString createJSONString({
     int indent = 4,
     JSValuePointer? exception,
   }) {
-    return JSString(JSValueRef.jSValueCreateJSONString(context.pointer, pointer,
-        indent, (exception ?? JSValuePointer(nullptr)).pointer));
+    return JSString.owned(JSValueRef.jSValueCreateJSONString(
+        context.pointer, pointer, indent, exception?.pointer ?? nullptr));
   }
 
   /// Converts a JavaScript value to boolean and returns the resulting boolean.
@@ -328,19 +335,22 @@ class JSValue {
 
   /// Converts a JavaScript value to number and returns the resulting string.
   String? get string {
-    JSString jsString = toStringCopy();
-    final str = jsString.string;
-    jsString.release();
-    return str;
+    final jsString = toStringCopy();
+    try {
+      return jsString.string;
+    } finally {
+      jsString.release();
+    }
   }
 
   /// Converts a JavaScript value to string and copies the result into a JavaScript string.
+  /// The returned JSString is owned by the caller and must be released.
   /// [exception] A pointer to a JSValueRef in which to store an exception, if any. Pass NULL if you do not care to store an exception.
   JSString toStringCopy({
     JSValuePointer? exception,
   }) {
-    return JSString(JSValueRef.jSValueToStringCopy(context.pointer, pointer,
-        (exception ?? JSValuePointer(nullptr)).pointer));
+    return JSString.owned(JSValueRef.jSValueToStringCopy(
+        context.pointer, pointer, exception?.pointer ?? nullptr));
   }
 
   /// Converts a JavaScript value to object and returns the resulting object.

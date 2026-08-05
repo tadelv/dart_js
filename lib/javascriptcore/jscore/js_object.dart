@@ -518,10 +518,10 @@ class JSObject {
       String name,
       Pointer<NativeFunction<JSObjectRef.JSObjectCallAsFunctionCallback>>?
           callAsFunction)
-      : this.pointer = JSObjectRef.jSObjectMakeFunctionWithCallback(
-            context.pointer,
-            JSString.fromString(name).pointer,
-            callAsFunction ?? nullptr);
+      : this.pointer = JSString.withStrings(
+            [name],
+            (strings) => JSObjectRef.jSObjectMakeFunctionWithCallback(
+                context.pointer, strings[0], callAsFunction ?? nullptr));
 
   /// Convenience method for creating a JavaScript constructor.
   /// The default object constructor takes no arguments and constructs an object of class jsClass with no private data.
@@ -612,23 +612,32 @@ class JSObject {
   /// [sourceURL] A JSString containing a URL for the script's source file. This is only used when reporting exceptions. Pass NULL if you do not care to include source file information in exceptions.
   /// [startingLineNumber] (int) An integer value specifying the script's starting line number in the file located at sourceURL. This is only used when reporting exceptions. The value is one-based, so the first line is line 1 and invalid values are clamped to 1.
   /// [exception] (JSValueRef*) A pointer to a JSValueRef in which to store a syntax error exception, if any. Pass NULL if you do not care to store a syntax error exception.
-  JSObject.makeFunction(
-    this.context,
+  factory JSObject.makeFunction(
+    JSContext context,
     String name,
     JSStringPointer parameterNames,
     String body,
     String sourceURL, {
     JSValuePointer? exception,
     int startingLineNumber = 0,
-  }) : this.pointer = JSObjectRef.jSObjectMakeFunction(
-            context.pointer,
-            JSString.fromString(name).pointer,
-            parameterNames.count,
-            parameterNames.pointer,
-            JSString.fromString(body).pointer,
-            JSString.fromString(sourceURL).pointer,
-            startingLineNumber,
-            (exception ?? JSValuePointer(nullptr)).pointer);
+  }) {
+    try {
+      final pointer = JSString.withStrings(
+          [name, body, sourceURL],
+          (strings) => JSObjectRef.jSObjectMakeFunction(
+              context.pointer,
+              strings[0],
+              parameterNames.count,
+              parameterNames.pointer,
+              strings[1],
+              strings[2],
+              startingLineNumber,
+              exception?.pointer ?? nullptr));
+      return JSObject(context, pointer);
+    } finally {
+      parameterNames.release();
+    }
+  }
 
   /// Creates a JavaScript Typed Array object with the given number of elements.
   /// [arrayType] A value [JSTypedArrayType] identifying the type of array to create. If arrayType is kJSTypedArrayTypeNone or kJSTypedArrayTypeArrayBuffer then NULL will be returned.
@@ -743,9 +752,11 @@ class JSObject {
   /// Tests whether an object has a given property.
   /// [propertyName] (JSStringRef) A JSString containing the property's name.
   bool hasProperty(String propertyName) {
-    return JSObjectRef.jSObjectHasProperty(context.pointer, pointer,
-            JSString.fromString(propertyName).pointer) ==
-        1;
+    return JSString.withStrings(
+        [propertyName],
+        (strings) => JSObjectRef.jSObjectHasProperty(
+                context.pointer, pointer, strings[0]) ==
+            1);
   }
 
   /// Tests whether an object has a given property.
@@ -755,13 +766,15 @@ class JSObject {
     String propertyName, {
     JSValuePointer? exception,
   }) {
-    return JSValue(
-        context,
-        JSObjectRef.jSObjectGetProperty(
-            context.pointer,
-            pointer,
-            JSString.fromString(propertyName).pointer,
-            (exception ?? JSValuePointer(nullptr)).pointer));
+    return JSString.withStrings(
+        [propertyName],
+        (strings) => JSValue(
+            context,
+            JSObjectRef.jSObjectGetProperty(
+                context.pointer,
+                pointer,
+                strings[0],
+                exception?.pointer ?? nullptr)));
   }
 
   /// Sets a property on an object.
@@ -775,13 +788,15 @@ class JSObject {
     JSPropertyAttributes attributes, {
     JSValuePointer? exception,
   }) {
-    JSObjectRef.jSObjectSetProperty(
-        context.pointer,
-        pointer,
-        JSString.fromString(propertyName).pointer,
-        value.pointer,
-        jSPropertyAttributesToCEnum(attributes),
-        (exception ?? JSValuePointer(nullptr)).pointer);
+    JSString.withStrings([propertyName], (strings) {
+      JSObjectRef.jSObjectSetProperty(
+          context.pointer,
+          pointer,
+          strings[0],
+          value.pointer,
+          jSPropertyAttributesToCEnum(attributes),
+          exception?.pointer ?? nullptr);
+    });
   }
 
   /// Deletes a property from an object.
@@ -792,12 +807,14 @@ class JSObject {
     String propertyName, {
     JSValuePointer? exception,
   }) {
-    return JSObjectRef.jSObjectDeleteProperty(
-            context.pointer,
-            pointer,
-            JSString.fromString(propertyName).pointer,
-            (exception ?? JSValuePointer(nullptr)).pointer) ==
-        1;
+    return JSString.withStrings(
+        [propertyName],
+        (strings) => JSObjectRef.jSObjectDeleteProperty(
+                context.pointer,
+                pointer,
+                strings[0],
+                exception?.pointer ?? nullptr) ==
+            1);
   }
 
   /// Tests whether an object has a given property using a JSValueRef as the property key.
@@ -808,12 +825,14 @@ class JSObject {
     String propertyKey, {
     JSValuePointer? exception,
   }) {
-    return JSObjectRef.jSObjectHasPropertyForKey(
-            context.pointer,
-            pointer,
-            JSString.fromString(propertyKey).pointer,
-            (exception ?? JSValuePointer(nullptr)).pointer) ==
-        1;
+    return JSString.withStrings(
+        [propertyKey],
+        (strings) => JSObjectRef.jSObjectHasPropertyForKey(
+                context.pointer,
+                pointer,
+                strings[0],
+                exception?.pointer ?? nullptr) ==
+            1);
   }
 
   /// Gets a property from an object using a JSValueRef as the property key.
@@ -824,13 +843,15 @@ class JSObject {
     String propertyKey, {
     JSValuePointer? exception,
   }) {
-    return JSValue(
-        context,
-        JSObjectRef.jSObjectGetPropertyForKey(
-            context.pointer,
-            pointer,
-            JSString.fromString(propertyKey).pointer,
-            (exception ?? JSValuePointer(nullptr)).pointer));
+    return JSString.withStrings(
+        [propertyKey],
+        (strings) => JSValue(
+            context,
+            JSObjectRef.jSObjectGetPropertyForKey(
+                context.pointer,
+                pointer,
+                strings[0],
+                exception?.pointer ?? nullptr)));
   }
 
   /// Sets a property on an object using a JSValueRef as the property key.
@@ -845,13 +866,15 @@ class JSObject {
     JSPropertyAttributes attributes, {
     JSValuePointer? exception,
   }) {
-    JSObjectRef.jSObjectSetPropertyForKey(
-        context.pointer,
-        pointer,
-        JSString.fromString(propertyKey).pointer,
-        value.pointer,
-        jSPropertyAttributesToCEnum(attributes),
-        (exception ?? JSValuePointer(nullptr)).pointer);
+    JSString.withStrings([propertyKey], (strings) {
+      JSObjectRef.jSObjectSetPropertyForKey(
+          context.pointer,
+          pointer,
+          strings[0],
+          value.pointer,
+          jSPropertyAttributesToCEnum(attributes),
+          exception?.pointer ?? nullptr);
+    });
   }
 
   /// Gets a property from an object by numeric index.
@@ -958,8 +981,10 @@ class JSObject {
   /// [propertyName] (JSStringRef) The property name to add.
   void propertyNameAccumulatorAddName(
       JSPropertyNameAccumulator accumulator, String propertyName) {
-    JSObjectRef.jSPropertyNameAccumulatorAddName(
-        accumulator.pointer, JSString.fromString(propertyName).pointer);
+    JSString.withStrings([propertyName], (strings) {
+      JSObjectRef.jSPropertyNameAccumulatorAddName(
+          accumulator.pointer, strings[0]);
+    });
   }
 
   /// Returns a temporary pointer to the backing store of a JavaScript Typed Array object.

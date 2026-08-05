@@ -81,13 +81,14 @@ class JSContext {
   /// Gets a copy of the name of a context.
   /// A JSGlobalContext's name is exposed for remote debugging to make it
   /// easier to identify the context you would like to attach to.
-  /// [@result] (JSString) The name for ctx.
+  /// [@result] (JSString) A caller-owned name for ctx that must be released.
   JSString copyName() {
-    return JSString(JSContextRef.jSGlobalContextCopyName(pointer));
+    return JSString.owned(JSContextRef.jSGlobalContextCopyName(pointer));
   }
 
   /// Sets the remote debugging name for a context.
   /// [name] (JSString) The remote debugging name to set on ctx.
+  /// The context does not take ownership of name.
   void setName(JSString name) {
     return JSContextRef.jSGlobalContextSetName(pointer, name.pointer);
   }
@@ -104,16 +105,18 @@ class JSContext {
     String? sourceURL,
     int startingLineNumber = 1,
   }) {
-    return JSValue(
-        this,
-        JSBase.jSEvaluateScript(
-          pointer,
-          JSString.fromString(script).pointer,
-          thisObject == null ? nullptr : thisObject.pointer,
-          sourceURL == null ? nullptr : JSString.fromString(sourceURL).pointer,
-          startingLineNumber,
-          exception.pointer,
-        ));
+    return JSString.withStrings(
+        [script, sourceURL],
+        (strings) => JSValue(
+            this,
+            JSBase.jSEvaluateScript(
+              pointer,
+              strings[0],
+              thisObject == null ? nullptr : thisObject.pointer,
+              strings[1],
+              startingLineNumber,
+              exception.pointer,
+            )));
   }
 
   void setInspectable(bool inspectable) {
