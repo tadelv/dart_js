@@ -133,11 +133,17 @@ extension HandlePromises on JavascriptRuntime {
     if (value.stringResult != '[object Promise]') return Future.value(value);
 
     final fnRegisterPromiseFunction = evaluate(REGISTER_PROMISE_FUNCTION);
+    if (fnRegisterPromiseFunction.isError) {
+      throw StateError(fnRegisterPromiseFunction.stringResult);
+    }
     final evalRegisterPromise = fnRegisterPromiseFunction.rawResult;
     // print(fnRegisterPromiseFunction);
     // todo: investigate - application is crashing around this point
-    final promiseQuerableIdx =
-        callFunction(evalRegisterPromise, value.rawResult).stringResult;
+    final registerResult = callFunction(evalRegisterPromise, value.rawResult);
+    if (registerResult.isError) {
+      throw StateError(registerResult.stringResult);
+    }
+    final promiseQuerableIdx = registerResult.stringResult;
     int idxPromise = int.parse(promiseQuerableIdx);
     Timer.periodic(Duration(milliseconds: 20), (timer) {
       // call to _JS_ExecutePendingJob
