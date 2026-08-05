@@ -39,6 +39,35 @@ void main() {
           'answer': 42,
         });
 
+        final hostileResult = runtime.evaluate('''
+          ({
+            answer: 42,
+            toString() { throw "failed"; }
+          })
+        ''');
+        expect(hostileResult.isError, isFalse);
+        expect(
+          runtime.convertValue<Map<String, dynamic>>(hostileResult),
+          {'answer': 42},
+        );
+
+        final hostileFunction = runtime.evaluate('''
+          (function() {
+            return {
+              answer: 42,
+              toString() { throw "failed"; }
+            };
+          })
+        ''');
+        final hostileCall = runtime.callFunction(
+          hostileFunction.rawResult,
+          runtime.evaluate('undefined').rawResult,
+        );
+        expect(hostileCall.isError, isFalse);
+        expect(runtime.convertValue<Map<String, dynamic>>(hostileCall), {
+          'answer': 42,
+        });
+
         for (final entry in <String, String>{
           'throw "failed";': 'failed',
           'throw 1;': '1',
