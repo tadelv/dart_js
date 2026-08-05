@@ -101,7 +101,9 @@ class JSContext {
     JSObject? thisObject,
     String? sourceURL,
     int startingLineNumber = 1,
+    JSValuePointer? exception,
   }) {
+    exception?.reset();
     return JSString.withStrings(
         [script, sourceURL],
         (strings) => JSValue(
@@ -112,7 +114,7 @@ class JSContext {
               thisObject == null ? nullptr : thisObject.pointer,
               strings[1],
               startingLineNumber,
-              nullptr,
+              exception?.pointer ?? nullptr,
             )));
   }
 
