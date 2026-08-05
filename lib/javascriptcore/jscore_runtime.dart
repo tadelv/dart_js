@@ -70,16 +70,12 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
           'ERROR: JavaScriptCore returned a null result without an exception',
         );
       }
-      try {
-        return JsEvalResult(
-          _getJsValue(resultRef),
-          resultRef,
-          isError: false,
-          isPromise: _isPromise(resultRef),
-        );
-      } on StateError catch (error) {
-        return _nativeError('ERROR: ${error.message}', resultRef);
-      }
+      return JsEvalResult(
+        _getJsValue(resultRef),
+        resultRef,
+        isError: false,
+        isPromise: _isPromise(resultRef),
+      );
     } finally {
       exception.release();
     }
@@ -144,28 +140,7 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
     if (value.isNull) return 'null';
     if (value.isUndefined) return 'undefined';
 
-    final exception = JSValuePointer();
-    JSString? resultString;
-    try {
-      resultString = value.toStringCopy(exception: exception);
-      final exceptionRef = exception.pointer.value;
-      if (exceptionRef != nullptr) {
-        throw StateError(_formatException(exceptionRef));
-      }
-      if (resultString.pointer == nullptr) {
-        throw StateError(
-            'ERROR: JavaScript value string conversion returned null');
-      }
-      final result = resultString.string;
-      if (result == null) {
-        throw StateError(
-            'ERROR: JavaScript value string conversion returned null');
-      }
-      return result;
-    } finally {
-      resultString?.release();
-      exception.release();
-    }
+    return _tryString(value) ?? '[${_valueType(value)}]';
   }
 
   JSValue? _readProperty(JSObject object, String propertyName) {
@@ -357,16 +332,12 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
           'ERROR: JavaScriptCore returned a null call result without an exception',
         );
       }
-      try {
-        return JsEvalResult(
-          _getJsValue(result.pointer),
-          result.pointer,
-          isError: false,
-          isPromise: _isPromise(result.pointer),
-        );
-      } on StateError catch (error) {
-        return _nativeError('ERROR: ${error.message}', result.pointer);
-      }
+      return JsEvalResult(
+        _getJsValue(result.pointer),
+        result.pointer,
+        isError: false,
+        isPromise: _isPromise(result.pointer),
+      );
     } finally {
       arguments.release();
       exception.release();
