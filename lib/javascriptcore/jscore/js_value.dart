@@ -173,6 +173,12 @@ class JSValue {
 
   JSValue(this.context, this.pointer);
 
+  void _ensurePointer() {
+    if (pointer == nullptr) {
+      throw StateError('JavaScript value reference is null');
+    }
+  }
+
   /// Creates a JavaScript value of the undefined type.
   JSValue.makeUndefined(this.context)
       : this.pointer = JSValueRef.jSValueMakeUndefined(context.pointer);
@@ -218,58 +224,69 @@ class JSValue {
 
   /// Value type
   JSType get type {
+    _ensurePointer();
     int typeCode = JSValueRef.jSValueGetType(context.pointer, pointer);
     return cEnumToJSType(typeCode);
   }
 
   /// Tests whether a JavaScript value's type is the undefined type.
   bool get isUndefined {
+    _ensurePointer();
     return JSValueRef.jSValueIsUndefined(context.pointer, pointer) == 1;
   }
 
   /// Tests whether a JavaScript value's type is the null type.
   bool get isNull {
+    _ensurePointer();
     return JSValueRef.jSValueIsNull(context.pointer, pointer) == 1;
   }
 
   /// Tests whether a JavaScript value's type is the boolean type.
   bool get isBoolean {
+    _ensurePointer();
     return JSValueRef.jSValueIsBoolean(context.pointer, pointer) == 1;
   }
 
   /// Tests whether a JavaScript value's type is the number type.
   bool get isNumber {
+    _ensurePointer();
     return JSValueRef.jSValueIsNumber(context.pointer, pointer) == 1;
   }
 
   /// Tests whether a JavaScript value's type is the string type.
   bool get isString {
+    _ensurePointer();
     return JSValueRef.jSValueIsString(context.pointer, pointer) == 1;
   }
 
   /// Tests whether a JavaScript value's type is the symbol type.
   bool get isSymbol {
+    _ensurePointer();
     return JSValueRef.jSValueIsSymbol(context.pointer, pointer) == 1;
   }
 
   /// Tests whether a JavaScript value's type is the object type.
   bool get isObject {
+    _ensurePointer();
     return JSValueRef.jSValueIsObject(context.pointer, pointer) == 1;
   }
 
   /// Tests whether a JavaScript value is an array.
   bool get isArray {
+    _ensurePointer();
     return JSValueRef.jSValueIsArray(context.pointer, pointer) == 1;
   }
 
   /// Tests whether a JavaScript value is a date.
   bool get isDate {
+    _ensurePointer();
     return JSValueRef.jSValueIsDate(context.pointer, pointer) == 1;
   }
 
   /// Tests whether a JavaScript value's type is the symbol type.
   /// [jsClass] The JSClass to test against.
   bool isObjectOfClass(JSClass jsClass) {
+    _ensurePointer();
     return JSValueRef.jSValueIsObjectOfClass(
             context.pointer, pointer, jsClass.pointer) ==
         1;
@@ -279,6 +296,8 @@ class JSValue {
   JSTypedArrayType getTypedArrayType({
     JSValuePointer? exception,
   }) {
+    _ensurePointer();
+    exception?.reset();
     int typeCode = JSValueRef.jSValueGetTypedArrayType(
         context.pointer, pointer, exception?.pointer ?? nullptr);
     return cEnumToJSTypedArrayType(typeCode);
@@ -289,6 +308,9 @@ class JSValue {
     JSValue other, {
     JSValuePointer? exception,
   }) {
+    _ensurePointer();
+    other._ensurePointer();
+    exception?.reset();
     return JSValueRef.jSValueIsEqual(context.pointer, pointer, other.pointer,
             exception?.pointer ?? nullptr) ==
         1;
@@ -299,6 +321,8 @@ class JSValue {
     JSObject constructor, {
     JSValuePointer? exception,
   }) {
+    _ensurePointer();
+    exception?.reset();
     return JSValueRef.jSValueIsInstanceOfConstructor(context.pointer, pointer,
             constructor.pointer, exception?.pointer ?? nullptr) ==
         1;
@@ -312,12 +336,15 @@ class JSValue {
     int indent = 4,
     JSValuePointer? exception,
   }) {
+    _ensurePointer();
+    exception?.reset();
     return JSString.owned(JSValueRef.jSValueCreateJSONString(
         context.pointer, pointer, indent, exception?.pointer ?? nullptr));
   }
 
   /// Converts a JavaScript value to boolean and returns the resulting boolean.
   bool get toBoolean {
+    _ensurePointer();
     return JSValueRef.jSValueToBoolean(context.pointer, pointer) == 1;
   }
 
@@ -326,17 +353,33 @@ class JSValue {
   double toNumber({
     JSValuePointer? exception,
   }) {
+    _ensurePointer();
+    exception?.reset();
     return JSValueRef.jSValueToNumber(
         context.pointer, pointer, exception?.pointer ?? nullptr);
   }
 
   /// Converts a JavaScript value to number and returns the resulting string.
   String? get string {
-    final jsString = toStringCopy();
+    _ensurePointer();
+    final exception = JSValuePointer();
+    JSString? jsString;
     try {
-      return jsString.string;
+      jsString = toStringCopy(exception: exception);
+      if (exception.pointer.value != nullptr) {
+        throw StateError('JavaScript value string conversion threw');
+      }
+      if (jsString.pointer == nullptr) {
+        throw StateError('JavaScript value string conversion returned null');
+      }
+      final value = jsString.string;
+      if (value == null) {
+        throw StateError('JavaScript value string conversion returned null');
+      }
+      return value;
     } finally {
-      jsString.release();
+      jsString?.release();
+      exception.release();
     }
   }
 
@@ -346,6 +389,8 @@ class JSValue {
   JSString toStringCopy({
     JSValuePointer? exception,
   }) {
+    _ensurePointer();
+    exception?.reset();
     return JSString.owned(JSValueRef.jSValueToStringCopy(
         context.pointer, pointer, exception?.pointer ?? nullptr));
   }
@@ -355,6 +400,8 @@ class JSValue {
   JSObject toObject({
     JSValuePointer? exception,
   }) {
+    _ensurePointer();
+    exception?.reset();
     return JSObject(
         context,
         JSValueRef.jSValueToObject(
@@ -366,6 +413,7 @@ class JSValue {
   ///
   /// A value may be protected multiple times and must be unprotected an equal number of times before becoming eligible for garbage collection.
   void protect() {
+    _ensurePointer();
     JSValueRef.jSValueProtect(context.pointer, pointer);
   }
 
@@ -374,18 +422,21 @@ class JSValue {
   ///
   /// A value may be protected multiple times and must be unprotected an equal number of times before becoming eligible for garbage collection.
   void unProtect() {
+    _ensurePointer();
     JSValueRef.jSValueUnprotect(context.pointer, pointer);
   }
 
   /// Tests whether two JavaScript values are strict equal, as compared by the JS === operator.
   @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is JSValue &&
-          runtimeType == other.runtimeType &&
-          JSValueRef.jSValueIsStrictEqual(
-                  context.pointer, pointer, other.pointer) ==
-              1;
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! JSValue || runtimeType != other.runtimeType) return false;
+    _ensurePointer();
+    other._ensurePointer();
+    return JSValueRef.jSValueIsStrictEqual(
+            context.pointer, pointer, other.pointer) ==
+        1;
+  }
 
   @override
   int get hashCode => context.hashCode ^ pointer.hashCode;

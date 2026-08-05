@@ -56,40 +56,30 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
   JsEvalResult evaluate(String js, {String? sourceUrl}) {
     final exception = JSValuePointer();
     try {
-      final jsValueRef = JSString.withStrings(
+      final resultRef = JSString.withStrings(
           [js, sourceUrl],
-          (strings) => jSEvaluateScript(
-              _globalContext,
-              strings[0],
-              nullptr,
-              strings[1],
-              1,
-              exception.pointer));
+          (strings) => jSEvaluateScript(_globalContext, strings[0], nullptr,
+              strings[1], 1, exception.pointer));
 
-      String result;
-
-      final exceptionValue = exception.getValue(context);
-      bool isPromise = false;
-      if (exceptionValue.isObject) {
-        result =
-            'ERROR: ${exceptionValue.toObject().getProperty("message").string} \n  at ${exceptionValue.toObject().getProperty("stack").string}';
-      } else {
-        result = _getJsValue(jsValueRef);
-        final resultValue = JSValue(context, jsValueRef);
-
-        isPromise = resultValue.isObject &&
-            resultValue.toObject().getProperty('then').isObject &&
-            resultValue.toObject().getProperty('catch').isObject;
+      final exceptionRef = exception.pointer.value;
+      if (exceptionRef != nullptr) {
+        return _nativeError(_formatException(exceptionRef), exceptionRef);
       }
-
-      return JsEvalResult(
-        result,
-        exceptionValue.isObject
-            ? exceptionValue.toObject().pointer
-            : jsValueRef,
-        isError: result.startsWith('ERROR:'),
-        isPromise: isPromise,
-      );
+      if (resultRef == nullptr) {
+        return _nativeError(
+          'ERROR: JavaScriptCore returned a null result without an exception',
+        );
+      }
+      try {
+        return JsEvalResult(
+          _getJsValue(resultRef),
+          resultRef,
+          isError: false,
+          isPromise: _isPromise(resultRef),
+        );
+      } on StateError catch (error) {
+        return _nativeError('ERROR: ${error.message}', resultRef);
+      }
     } finally {
       exception.release();
     }
@@ -142,18 +132,140 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
     return nullptr;
   }
 
+  JsEvalResult _nativeError(String message, [Pointer? rawResult]) {
+    return JsEvalResult(message, rawResult ?? nullptr, isError: true);
+  }
+
   String _getJsValue(Pointer jsValueRef) {
-    if (jSValueIsNull(_globalContext, jsValueRef) == 1) {
-      return 'null';
-    } else if (jSValueIsUndefined(_globalContext, jsValueRef) == 1) {
-      return 'undefined';
+    if (jsValueRef == nullptr) {
+      throw StateError('JavaScript value result is null');
     }
-    final resultJsString = JSString.owned(
-        jSValueToStringCopy(_globalContext, jsValueRef, nullptr));
+    final value = JSValue(context, jsValueRef);
+    if (value.isNull) return 'null';
+    if (value.isUndefined) return 'undefined';
+
+    final exception = JSValuePointer();
+    JSString? resultString;
     try {
-      return resultJsString.string ?? 'null';
+      resultString = value.toStringCopy(exception: exception);
+      final exceptionRef = exception.pointer.value;
+      if (exceptionRef != nullptr) {
+        throw StateError(_formatException(exceptionRef));
+      }
+      if (resultString.pointer == nullptr) {
+        throw StateError(
+            'ERROR: JavaScript value string conversion returned null');
+      }
+      final result = resultString.string;
+      if (result == null) {
+        throw StateError(
+            'ERROR: JavaScript value string conversion returned null');
+      }
+      return result;
     } finally {
-      resultJsString.release();
+      resultString?.release();
+      exception.release();
+    }
+  }
+
+  JSValue? _readProperty(JSObject object, String propertyName) {
+    final exception = JSValuePointer();
+    try {
+      final value = object.getProperty(propertyName, exception: exception);
+      if (exception.pointer.value != nullptr || value.pointer == nullptr) {
+        return null;
+      }
+      return value;
+    } catch (_) {
+      return null;
+    } finally {
+      exception.release();
+    }
+  }
+
+  String? _readStringProperty(JSObject object, String propertyName) {
+    try {
+      final value = _readProperty(object, propertyName);
+      if (value == null ||
+          value.isNull ||
+          value.isUndefined ||
+          !value.isString) {
+        return null;
+      }
+      return _tryString(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _tryString(JSValue value) {
+    try {
+      if (value.isNull) return 'null';
+      if (value.isUndefined) return 'undefined';
+
+      final exception = JSValuePointer();
+      JSString? resultString;
+      try {
+        resultString = value.toStringCopy(exception: exception);
+        if (exception.pointer.value != nullptr ||
+            resultString.pointer == nullptr) {
+          return null;
+        }
+        return resultString.string;
+      } catch (_) {
+        return null;
+      } finally {
+        resultString?.release();
+        exception.release();
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _valueType(JSValue value) {
+    try {
+      return value.type.name;
+    } catch (_) {
+      return 'unknown';
+    }
+  }
+
+  String _formatException(Pointer exceptionRef) {
+    if (exceptionRef == nullptr) {
+      return 'ERROR: JavaScript exception (unknown)';
+    }
+    try {
+      final value = JSValue(context, exceptionRef);
+      if (value.isObject) {
+        final object = JSObject(context, exceptionRef);
+        final message = _readStringProperty(object, 'message');
+        final stack = _readStringProperty(object, 'stack');
+        if (message != null || stack != null) {
+          final formattedMessage = message ?? 'JavaScript exception';
+          final formattedStack = stack == null ? '' : '\n  at $stack';
+          return 'ERROR: $formattedMessage$formattedStack';
+        }
+      }
+      final fallback = _tryString(value);
+      if (fallback != null) return 'ERROR: $fallback';
+      return 'ERROR: JavaScript exception (${_valueType(value)})';
+    } catch (_) {
+      return 'ERROR: JavaScript exception (unknown)';
+    }
+  }
+
+  bool _isPromise(Pointer resultRef) {
+    try {
+      final value = JSValue(context, resultRef);
+      if (!value.isObject) return false;
+      final object = JSObject(context, resultRef);
+      final then = _readProperty(object, 'then');
+      if (then == null || !then.isObject) return false;
+      final catchProperty = _readProperty(object, 'catch');
+      return catchProperty != null && catchProperty.isObject;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -215,8 +327,20 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
 
   @override
   JsEvalResult callFunction(Pointer<NativeType>? fn, Pointer<NativeType>? obj) {
-    final functionObj = JSValue(context, fn ?? nullptr).toObject();
-    final arguments = JSValuePointer.array([JSValue(context, obj ?? nullptr)]);
+    if (fn == null || fn == nullptr) {
+      return _nativeError('ERROR: Cannot call a null JavaScript function');
+    }
+    if (obj == null || obj == nullptr) {
+      return _nativeError(
+          'ERROR: Cannot call a JavaScript function with a null argument');
+    }
+
+    final functionValue = JSValue(context, fn);
+    if (!functionValue.isObject) {
+      return _nativeError('ERROR: JavaScript function reference is not an object');
+    }
+    final functionObj = JSObject(context, fn);
+    final arguments = JSValuePointer.array([JSValue(context, obj)]);
     final exception = JSValuePointer();
     try {
       final result = functionObj.callAsFunction(
@@ -224,80 +348,123 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
         arguments,
         exception: exception,
       );
-      final exceptionValue = exception.getValue(context);
-      bool isPromise = false;
-
-      if (exceptionValue.isObject) {
-        throw Exception(
-            'ERROR: ${exceptionValue.toObject().getProperty("message").string}');
-      } else {
-        isPromise = result.isObject &&
-            result.toObject().getProperty('then').isObject &&
-            result.toObject().getProperty('catch').isObject;
+      final exceptionRef = exception.pointer.value;
+      if (exceptionRef != nullptr) {
+        return _nativeError(_formatException(exceptionRef), exceptionRef);
       }
-
-      return JsEvalResult(
-        _getJsValue(result.pointer),
-        exceptionValue.isObject
-            ? exceptionValue.toObject().pointer
-            : result.pointer,
-        isPromise: isPromise,
-      );
+      if (result.pointer == nullptr) {
+        return _nativeError(
+          'ERROR: JavaScriptCore returned a null call result without an exception',
+        );
+      }
+      try {
+        return JsEvalResult(
+          _getJsValue(result.pointer),
+          result.pointer,
+          isError: false,
+          isPromise: _isPromise(result.pointer),
+        );
+      } on StateError catch (error) {
+        return _nativeError('ERROR: ${error.message}', result.pointer);
+      }
     } finally {
       arguments.release();
       exception.release();
     }
   }
 
+  Pointer _requireRawResult(JsEvalResult jsValue) {
+    if (jsValue.isError) {
+      throw StateError('Cannot convert a JavaScript error result');
+    }
+    if (jsValue.rawResult is! Pointer) {
+      throw StateError('JavaScript result is not a native value reference');
+    }
+    final rawResult = jsValue.rawResult as Pointer;
+    if (rawResult == nullptr) {
+      throw StateError('JavaScript result reference is null');
+    }
+    return rawResult;
+  }
+
   @override
   T? convertValue<T>(JsEvalResult jsValue) {
-    if (jSValueIsNull(_globalContext, jsValue.rawResult) == 1) {
+    final rawResult = _requireRawResult(jsValue);
+    final value = JSValue(context, rawResult);
+    if (value.isNull) {
       return null;
-    } else if (jSValueIsString(_globalContext, jsValue.rawResult) == 1) {
-      return _getJsValue(jsValue.rawResult) as T;
-    } else if (jSValueIsBoolean(_globalContext, jsValue.rawResult) == 1) {
-      return (_getJsValue(jsValue.rawResult) == "true") as T;
-    } else if (jSValueIsNumber(_globalContext, jsValue.rawResult) == 1) {
-      String valueString = _getJsValue(jsValue.rawResult);
-
-      if (valueString.contains(".")) {
-        try {
-          return double.parse(valueString) as T;
-        } on TypeError {
-          print('Failed to cast $valueString... returning null');
-          return null;
-        }
-      } else {
-        try {
-          return int.parse(valueString) as T;
-        } on TypeError {
-          print('Failed to cast $valueString... returning null');
-          return null;
-        }
-      }
-    } else if (jSValueIsObject(_globalContext, jsValue.rawResult) == 1 ||
-        jSValueIsArray(_globalContext, jsValue.rawResult) == 1) {
-      final objValue = JSValue(context, jsValue.rawResult);
-      final serialized = objValue.createJSONString();
+    }
+    if (value.isString) {
+      return _getJsValue(rawResult) as T;
+    }
+    if (value.isBoolean) {
+      return value.toBoolean as T;
+    }
+    if (value.isNumber) {
+      final exception = JSValuePointer();
       try {
-        final string = serialized.string;
-        return string == null ? null : jsonDecode(string);
+        final number = value.toNumber(exception: exception);
+        final exceptionRef = exception.pointer.value;
+        if (exceptionRef != nullptr) {
+          throw StateError(_formatException(exceptionRef));
+        }
+        if (number.isFinite &&
+            number.truncateToDouble() == number &&
+            !(number == 0 && number.isNegative)) {
+          return number.toInt() as T;
+        }
+        return number as T;
       } finally {
-        serialized.release();
+        exception.release();
       }
-    } else {
-      return null;
+    }
+    if (!value.isObject && !value.isArray) return null;
+
+    final exception = JSValuePointer();
+    JSString? serialized;
+    try {
+      serialized = value.createJSONString(exception: exception);
+      final exceptionRef = exception.pointer.value;
+      if (exceptionRef != nullptr) {
+        throw StateError(_formatException(exceptionRef));
+      }
+      if (serialized.pointer == nullptr) {
+        throw StateError('JavaScript JSON serialization returned null');
+      }
+      final string = serialized.string;
+      if (string == null) {
+        throw StateError('JavaScript JSON serialization returned null');
+      }
+      return jsonDecode(string) as T;
+    } finally {
+      serialized?.release();
+      exception.release();
     }
   }
 
   @override
   String jsonStringify(JsEvalResult jsValue) {
-    final objValue = JSValue(context, jsValue.rawResult);
-    final serialized = objValue.createJSONString();
+    final rawResult = _requireRawResult(jsValue);
+    final value = JSValue(context, rawResult);
+    final exception = JSValuePointer();
+    JSString? serialized;
     try {
-      return serialized.string!;
+      serialized = value.createJSONString(exception: exception);
+      final exceptionRef = exception.pointer.value;
+      if (exceptionRef != nullptr) {
+        throw StateError(_formatException(exceptionRef));
+      }
+      if (serialized.pointer == nullptr) {
+        throw StateError('JavaScript JSON serialization returned null');
+      }
+      final string = serialized.string;
+      if (string == null) {
+        throw StateError('JavaScript JSON serialization returned null');
+      }
+      return string;
     } finally {
-      serialized.release();
+      serialized?.release();
+      exception.release();
     }
   }
 

@@ -799,6 +799,7 @@ class JSObject {
     String propertyName, {
     JSValuePointer? exception,
   }) {
+    exception?.reset();
     return JSString.withStrings(
         [propertyName],
         (strings) => JSValue(
@@ -965,6 +966,7 @@ class JSObject {
     JSValuePointer arguments, {
     JSValuePointer? exception,
   }) {
+    exception?.reset();
     return JSValue(
         context,
         JSObjectRef.jSObjectCallAsFunction(
