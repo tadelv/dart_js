@@ -289,17 +289,52 @@ final class JSStaticValue extends Struct {
 
 extension JSStaticValuePointer on Pointer<JSStaticValue> {
   static Pointer<JSStaticValue> allocate(JSStaticValueStruct struct) {
-    return malloc.call<JSStaticValue>(1)..ref.setValue(struct);
+    Pointer<JSStaticValue> pointer = nullptr;
+    try {
+      pointer = malloc.call<JSStaticValue>(1);
+      pointer.ref.setValue(struct);
+      return pointer;
+    } catch (_) {
+      if (pointer != nullptr) malloc.free(pointer);
+      if (struct.name != nullptr) malloc.free(struct.name);
+      rethrow;
+    }
   }
 
   static Pointer<JSStaticValue> allocateArray(
       List<JSStaticValueStruct> structList) {
-    final pointer = malloc.call<JSStaticValue>(structList.length + 1);
-    for (int index = 0; index < structList.length; index++) {
-      pointer[index].setValue(structList[index]);
+    if (structList.isEmpty) return nullptr;
+    Pointer<JSStaticValue> pointer = nullptr;
+    try {
+      pointer = malloc.call<JSStaticValue>(structList.length + 1);
+      for (int index = 0; index < structList.length; index++) {
+        pointer[index].setValue(structList[index]);
+      }
+      pointer[structList.length].setValue(JSStaticValueStruct());
+      return pointer;
+    } catch (_) {
+      if (pointer != nullptr) malloc.free(pointer);
+      for (final struct in structList) {
+        if (struct.name != nullptr) malloc.free(struct.name);
+      }
+      rethrow;
     }
-    pointer[structList.length].setValue(JSStaticValueStruct());
-    return pointer;
+  }
+
+  static void release(Pointer<JSStaticValue> pointer) {
+    if (pointer == nullptr) return;
+    if (pointer.ref.name != nullptr) malloc.free(pointer.ref.name);
+    malloc.free(pointer);
+  }
+
+  static void releaseArray(Pointer<JSStaticValue> pointer) {
+    if (pointer == nullptr) return;
+    var index = 0;
+    while (pointer[index].name != nullptr) {
+      malloc.free(pointer[index].name);
+      index++;
+    }
+    malloc.free(pointer);
   }
 }
 
@@ -343,17 +378,52 @@ final class JSStaticFunction extends Struct {
 
 extension JSStaticFunctionPointer on Pointer<JSStaticFunction> {
   static Pointer<JSStaticFunction> allocate(JSStaticFunctionStruct struct) {
-    return malloc.call<JSStaticFunction>(1)..ref.setValue(struct);
+    Pointer<JSStaticFunction> pointer = nullptr;
+    try {
+      pointer = malloc.call<JSStaticFunction>(1);
+      pointer.ref.setValue(struct);
+      return pointer;
+    } catch (_) {
+      if (pointer != nullptr) malloc.free(pointer);
+      if (struct.name != nullptr) malloc.free(struct.name);
+      rethrow;
+    }
   }
 
   static Pointer<JSStaticFunction> allocateArray(
       List<JSStaticFunctionStruct> structList) {
-    final pointer = malloc.call<JSStaticFunction>(structList.length + 1);
-    for (int index = 0; index < structList.length; index++) {
-      pointer[index].setValue(structList[index]);
+    if (structList.isEmpty) return nullptr;
+    Pointer<JSStaticFunction> pointer = nullptr;
+    try {
+      pointer = malloc.call<JSStaticFunction>(structList.length + 1);
+      for (int index = 0; index < structList.length; index++) {
+        pointer[index].setValue(structList[index]);
+      }
+      pointer[structList.length].setValue(JSStaticFunctionStruct());
+      return pointer;
+    } catch (_) {
+      if (pointer != nullptr) malloc.free(pointer);
+      for (final struct in structList) {
+        if (struct.name != nullptr) malloc.free(struct.name);
+      }
+      rethrow;
     }
-    pointer[structList.length].setValue(JSStaticFunctionStruct());
-    return pointer;
+  }
+
+  static void release(Pointer<JSStaticFunction> pointer) {
+    if (pointer == nullptr) return;
+    if (pointer.ref.name != nullptr) malloc.free(pointer.ref.name);
+    malloc.free(pointer);
+  }
+
+  static void releaseArray(Pointer<JSStaticFunction> pointer) {
+    if (pointer == nullptr) return;
+    var index = 0;
+    while (pointer[index].name != nullptr) {
+      malloc.free(pointer[index].name);
+      index++;
+    }
+    malloc.free(pointer);
   }
 }
 
@@ -464,24 +534,36 @@ extension JSClassDefinitionPointer on Pointer<JSClassDefinition> {
     Pointer<NativeFunction<JSObjectHasInstanceCallback>>? hasInstance,
     Pointer<NativeFunction<JSObjectConvertToTypeCallback>>? convertToType,
   }) {
-    return malloc.call<JSClassDefinition>(1)
-      ..ref.version = version
-      ..ref.attributes = attributes
-      ..ref.className = className
-      ..ref.parentClass = parentClass ?? nullptr
-      ..ref.staticValues = staticValues ?? nullptr
-      ..ref.staticFunctions = staticFunctions ?? nullptr
-      ..ref.initialize = initialize ?? nullptr
-      ..ref.finalize = finalize ?? nullptr
-      ..ref.hasProperty = hasProperty ?? nullptr
-      ..ref.getProperty = getProperty ?? nullptr
-      ..ref.setProperty = setProperty ?? nullptr
-      ..ref.deleteProperty = deleteProperty ?? nullptr
-      ..ref.getPropertyNames = getPropertyNames ?? nullptr
-      ..ref.callAsFunction = callAsFunction ?? nullptr
-      ..ref.callAsConstructor = callAsConstructor ?? nullptr
-      ..ref.hasInstance = hasInstance ?? nullptr
-      ..ref.convertToType = convertToType ?? nullptr;
+    Pointer<JSClassDefinition> pointer = nullptr;
+    try {
+      pointer = malloc.call<JSClassDefinition>(1);
+      pointer.ref.version = version;
+      pointer.ref.attributes = attributes;
+      pointer.ref.className = className;
+      pointer.ref.parentClass = parentClass ?? nullptr;
+      pointer.ref.staticValues = staticValues ?? nullptr;
+      pointer.ref.staticFunctions = staticFunctions ?? nullptr;
+      pointer.ref.initialize = initialize ?? nullptr;
+      pointer.ref.finalize = finalize ?? nullptr;
+      pointer.ref.hasProperty = hasProperty ?? nullptr;
+      pointer.ref.getProperty = getProperty ?? nullptr;
+      pointer.ref.setProperty = setProperty ?? nullptr;
+      pointer.ref.deleteProperty = deleteProperty ?? nullptr;
+      pointer.ref.getPropertyNames = getPropertyNames ?? nullptr;
+      pointer.ref.callAsFunction = callAsFunction ?? nullptr;
+      pointer.ref.callAsConstructor = callAsConstructor ?? nullptr;
+      pointer.ref.hasInstance = hasInstance ?? nullptr;
+      pointer.ref.convertToType = convertToType ?? nullptr;
+      return pointer;
+    } catch (_) {
+      if (pointer != nullptr) malloc.free(pointer);
+      rethrow;
+    }
+  }
+
+  static void release(Pointer<JSClassDefinition> pointer) {
+    if (pointer == nullptr) return;
+    malloc.free(pointer);
   }
 }
 

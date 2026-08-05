@@ -13,8 +13,14 @@ class JSClass {
 
   /// Creates a JavaScript class suitable for use with JSObjectMake.
   /// [definition] (JSClassDefinition*) A JSClassDefinition that defines the class.
-  JSClass.create(JSClassDefinition definition)
-      : this.pointer = JSObjectRef.jSClassCreate(definition.create());
+  JSClass.create(JSClassDefinition definition) : this.pointer = nullptr {
+    final nativeDefinition = definition.create();
+    try {
+      pointer = JSObjectRef.jSClassCreate(nativeDefinition);
+    } finally {
+      definition.release(nativeDefinition);
+    }
+  }
 
   /// Retains a JavaScript class.
   void retain() {

@@ -279,8 +279,8 @@ class JSValue {
   JSTypedArrayType getTypedArrayType({
     JSValuePointer? exception,
   }) {
-    int typeCode = JSValueRef.jSValueGetTypedArrayType(context.pointer, pointer,
-        (exception ?? JSValuePointer(nullptr)).pointer);
+    int typeCode = JSValueRef.jSValueGetTypedArrayType(
+        context.pointer, pointer, exception?.pointer ?? nullptr);
     return cEnumToJSTypedArrayType(typeCode);
   }
 
@@ -290,7 +290,7 @@ class JSValue {
     JSValuePointer? exception,
   }) {
     return JSValueRef.jSValueIsEqual(context.pointer, pointer, other.pointer,
-            (exception ?? JSValuePointer(nullptr)).pointer) ==
+            exception?.pointer ?? nullptr) ==
         1;
   }
 
@@ -299,11 +299,8 @@ class JSValue {
     JSObject constructor, {
     JSValuePointer? exception,
   }) {
-    return JSValueRef.jSValueIsInstanceOfConstructor(
-            context.pointer,
-            pointer,
-            constructor.pointer,
-            (exception ?? JSValuePointer(nullptr)).pointer) ==
+    return JSValueRef.jSValueIsInstanceOfConstructor(context.pointer, pointer,
+            constructor.pointer, exception?.pointer ?? nullptr) ==
         1;
   }
 
@@ -329,8 +326,8 @@ class JSValue {
   double toNumber({
     JSValuePointer? exception,
   }) {
-    return JSValueRef.jSValueToNumber(context.pointer, pointer,
-        (exception ?? JSValuePointer(nullptr)).pointer);
+    return JSValueRef.jSValueToNumber(
+        context.pointer, pointer, exception?.pointer ?? nullptr);
   }
 
   /// Converts a JavaScript value to number and returns the resulting string.
@@ -360,8 +357,8 @@ class JSValue {
   }) {
     return JSObject(
         context,
-        JSValueRef.jSValueToObject(context.pointer, pointer,
-            (exception ?? JSValuePointer(nullptr)).pointer));
+        JSValueRef.jSValueToObject(
+            context.pointer, pointer, exception?.pointer ?? nullptr));
   }
 
   /// Protects a JavaScript value from garbage collection.
@@ -415,7 +412,9 @@ class JSValuePointer {
   /// JSValueRef array
   JSValuePointer.array(List<JSValue> array)
       : this.count = array.length,
-        this._pointer = malloc.call<Pointer>(array.length) {
+        this._pointer = array.isEmpty
+            ? Pointer<Pointer>.fromAddress(0)
+            : malloc.call<Pointer>(array.length) {
     for (int i = 0; i < array.length; i++) {
       _pointer[i] = array[i].pointer;
     }
@@ -424,8 +423,18 @@ class JSValuePointer {
   void release() {
     if (_released) return;
     _released = true;
-    malloc.free(_pointer);
+    final pointer = _pointer;
     _pointer = Pointer<Pointer>.fromAddress(0);
+    if (pointer != nullptr) {
+      malloc.free(pointer);
+    }
+  }
+
+  void reset() {
+    if (_released) return;
+    for (var i = 0; i < count; i++) {
+      _pointer[i] = nullptr;
+    }
   }
 
   /// Get JSValue
