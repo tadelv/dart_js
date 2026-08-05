@@ -397,29 +397,40 @@ class JSValue {
 /// JSValueRef pointer
 class JSValuePointer {
   /// C pointer
-  final Pointer<Pointer> pointer;
+  Pointer<Pointer> _pointer;
 
   /// Pointer array count
   final int count;
 
+  bool _released = false;
+
+  Pointer<Pointer> get pointer => _pointer;
+
   JSValuePointer([Pointer? value])
       : this.count = 1,
-        this.pointer = malloc.call<Pointer>(1) {
-    pointer.value = value ?? nullptr;
+        this._pointer = malloc.call<Pointer>(1) {
+    _pointer.value = value ?? nullptr;
   }
 
   /// JSValueRef array
   JSValuePointer.array(List<JSValue> array)
       : this.count = array.length,
-        this.pointer = malloc.call<Pointer>(array.length) {
+        this._pointer = malloc.call<Pointer>(array.length) {
     for (int i = 0; i < array.length; i++) {
-      this.pointer[i] = array[i].pointer;
+      _pointer[i] = array[i].pointer;
     }
+  }
+
+  void release() {
+    if (_released) return;
+    _released = true;
+    malloc.free(_pointer);
+    _pointer = Pointer<Pointer>.fromAddress(0);
   }
 
   /// Get JSValue
   /// [index] Array index
   JSValue getValue(JSContext context, [int index = 0]) {
-    return JSValue(context, pointer[index]);
+    return JSValue(context, _pointer[index]);
   }
 }

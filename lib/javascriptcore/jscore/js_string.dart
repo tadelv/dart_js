@@ -15,8 +15,9 @@ class JSString {
 
   bool get isOwned => _ownedReferences > 0;
 
-  /// Wraps a raw pointer as borrowed. Use owned for Create/Copy results.
-  JSString(Pointer pointer) : this.borrowed(pointer);
+  /// Wraps a raw pointer as owned. Use owned or borrowed explicitly.
+  @Deprecated('Use JSString.owned or JSString.borrowed explicitly')
+  JSString(Pointer pointer) : this.owned(pointer);
 
   /// Wraps a caller-owned JSStringRef.
   JSString.owned(Pointer pointer)

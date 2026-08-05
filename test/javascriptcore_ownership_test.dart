@@ -2,9 +2,12 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:ffi/ffi.dart';
 import 'package:flutter_js/javascriptcore/jscore/js_string.dart';
 import 'package:flutter_js/javascriptcore/jscore/js_value.dart';
 import 'package:flutter_js/javascriptcore/jscore_runtime.dart';
+import 'package:flutter_js/javascriptcore/binding/js_string_ref.dart'
+    as JSStringRef;
 import 'package:test/test.dart';
 
 void main() {
@@ -15,6 +18,15 @@ void main() {
     () {
       final runtime = JavascriptCoreRuntime();
       try {
+        final cString = 'legacy'.toNativeUtf8();
+        final legacyPointer =
+            JSStringRef.jSStringCreateWithUTF8CString(cString);
+        malloc.free(cString);
+        final legacy = JSString(legacyPointer);
+        expect(legacy.isOwned, isTrue);
+        legacy.release();
+        expect(legacy.pointer, nullptr);
+
         final owned = JSString.fromString('owned');
         final ownedPointer = owned.pointer;
         final borrowed = JSString.borrowed(ownedPointer);
@@ -36,6 +48,11 @@ void main() {
         array.release();
         array.release();
         expect(array.pointer, nullptr);
+
+        final valuePointer = JSValuePointer();
+        valuePointer.release();
+        valuePointer.release();
+        expect(valuePointer.pointer, nullptr);
 
         expect(
           () => JSString.withStrings(['throw'], (_) {
