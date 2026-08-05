@@ -1,9 +1,7 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:ffi/ffi.dart';
 import 'package:flutter_js/javascript_runtime.dart';
 import 'package:flutter_js/javascriptcore/binding/js_object_ref.dart'
     as jsObject;
@@ -34,19 +32,17 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
 
     _sendMessageDartFunc = _sendMessage;
 
-    Pointer<Utf8> funcNameCString = 'sendMessage'.toNativeUtf8();
-    var functionObject = jSObjectMakeFunctionWithCallback(
-        _globalContext,
-        jSStringCreateWithUTF8CString(funcNameCString),
-        Pointer.fromFunction(sendMessageBridgeFunction));
-    jSObjectSetProperty(
-        _globalContext,
-        _globalObject,
-        jSStringCreateWithUTF8CString(funcNameCString),
-        functionObject,
-        jsObject.JSPropertyAttributes.kJSPropertyAttributeNone,
-        nullptr);
-    calloc.free(funcNameCString);
+    JSString.withStrings(['sendMessage'], (strings) {
+      final functionObject = jSObjectMakeFunctionWithCallback(
+          _globalContext, strings[0], Pointer.fromFunction(sendMessageBridgeFunction));
+      jSObjectSetProperty(
+          _globalContext,
+          _globalObject,
+          strings[0],
+          functionObject,
+          jsObject.JSPropertyAttributes.kJSPropertyAttributeNone,
+          nullptr);
+    });
 
     init();
   }
@@ -58,23 +54,16 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
 
   @override
   JsEvalResult evaluate(String js, {String? sourceUrl}) {
-    Pointer<Utf8> scriptCString = js.toNativeUtf8();
-    Pointer<Utf8>? sourceUrlCString = sourceUrl?.toNativeUtf8();
-
     JSValuePointer exception = JSValuePointer();
-    var jsValueRef = jSEvaluateScript(
-        _globalContext,
-        jSStringCreateWithUTF8CString(scriptCString),
-        nullptr,
-        sourceUrlCString != null
-            ? jSStringCreateWithUTF8CString(sourceUrlCString)
-            : nullptr,
-        1,
-        exception.pointer);
-    calloc.free(scriptCString);
-    if (sourceUrlCString != null) {
-        calloc.free(sourceUrlCString as Pointer<NativeType>);
-    }
+    final jsValueRef = JSString.withStrings(
+        [js, sourceUrl],
+        (strings) => jSEvaluateScript(
+            _globalContext,
+            strings[0],
+            nullptr,
+            strings[1],
+            1,
+            exception.pointer));
 
     String result;
 
@@ -153,19 +142,13 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
     } else if (jSValueIsUndefined(_globalContext, jsValueRef) == 1) {
       return 'undefined';
     }
-    var resultJsString =
-        jSValueToStringCopy(_globalContext, jsValueRef, nullptr);
-    var resultCString = jSStringGetCharactersPtr(resultJsString);
-    int resultCStringLength = jSStringGetLength(resultJsString);
-    if (resultCString == nullptr) {
-      return 'null';
+    final resultJsString = JSString.owned(
+        jSValueToStringCopy(_globalContext, jsValueRef, nullptr));
+    try {
+      return resultJsString.string ?? 'null';
+    } finally {
+      resultJsString.release();
     }
-    String result = String.fromCharCodes(Uint16List.view(
-        resultCString.cast<Uint16>().asTypedList(resultCStringLength).buffer,
-        0,
-        resultCStringLength));
-    jSStringRelease(resultJsString);
-    return result;
   }
 
   static jsObject.JSObjectCallAsFunctionCallbackDart? _sendMessageDartFunc;
@@ -204,19 +187,14 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
 
   Pointer<NativeType> _constructPromiseFor(Future future) {
     final id = future.hashCode;
-    Pointer<Utf8> scriptCString = ('var __JSC_promise_result$id = {};' +
+    final script = ('var __JSC_promise_result$id = {};' +
             'new Promise(function(resolve, reject) { __JSC_promise_result$id.resolve = resolve;' +
-            ' __JSC_promise_result$id.reject = reject;});')
-        .toNativeUtf8();
+            ' __JSC_promise_result$id.reject = reject;});');
 
-    var jsValueRef = jSEvaluateScript(
-        _globalContext,
-        jSStringCreateWithUTF8CString(scriptCString),
-        nullptr,
-        nullptr,
-        1,
-        nullptr);
-    calloc.free(scriptCString);
+    final jsValueRef = JSString.withStrings(
+        [script],
+        (strings) => jSEvaluateScript(
+            _globalContext, strings[0], nullptr, nullptr, 1, nullptr));
 
     future.then((value) {
       final encoded = json.encode(value);
@@ -289,8 +267,13 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
     } else if (jSValueIsObject(_globalContext, jsValue.rawResult) == 1 ||
         jSValueIsArray(_globalContext, jsValue.rawResult) == 1) {
       JSValue objValue = JSValuePointer(jsValue.rawResult).getValue(context);
-      String serialized = objValue.createJSONString().string!;
-      return jsonDecode(serialized);
+      final serialized = objValue.createJSONString();
+      try {
+        final string = serialized.string;
+        return string == null ? null : jsonDecode(string);
+      } finally {
+        serialized.release();
+      }
     } else {
       return null;
     }
@@ -299,7 +282,12 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
   @override
   String jsonStringify(JsEvalResult jsValue) {
     JSValue objValue = JSValuePointer(jsValue.rawResult).getValue(context);
-    return objValue.createJSONString().string!;
+    final serialized = objValue.createJSONString();
+    try {
+      return serialized.string!;
+    } finally {
+      serialized.release();
+    }
   }
 
   @override
