@@ -607,7 +607,7 @@ class JSObject {
   /// Creates a function with a given script as its body.
   /// Use this method when you want to execute a script repeatedly, to avoid the cost of re-parsing the script before each execution.
   /// [name] A JSString containing the function's name. This will be used when converting the function to string. Pass NULL to create an anonymous function.
-  /// [parameterNames] (JSStringRef[]) A JSString array containing the names of the function's parameters. Pass NULL if parameterCount is 0.
+  /// [parameterNames] The names of the function's parameters. Pass an empty list if there are none.
   /// [body] A JSString containing the script to use as the function's body.
   /// [sourceURL] A JSString containing a URL for the script's source file. This is only used when reporting exceptions. Pass NULL if you do not care to include source file information in exceptions.
   /// [startingLineNumber] (int) An integer value specifying the script's starting line number in the file located at sourceURL. This is only used when reporting exceptions. The value is one-based, so the first line is line 1 and invalid values are clamped to 1.
@@ -615,27 +615,28 @@ class JSObject {
   factory JSObject.makeFunction(
     JSContext context,
     String name,
-    JSStringPointer parameterNames,
+    List<String> parameterNames,
     String body,
     String sourceURL, {
     JSValuePointer? exception,
     int startingLineNumber = 0,
   }) {
+    final nativeParameterNames = JSStringPointer.array(parameterNames);
     try {
       final pointer = JSString.withStrings(
           [name, body, sourceURL],
           (strings) => JSObjectRef.jSObjectMakeFunction(
               context.pointer,
               strings[0],
-              parameterNames.count,
-              parameterNames.pointer,
+              nativeParameterNames.count,
+              nativeParameterNames.pointer,
               strings[1],
               strings[2],
               startingLineNumber,
               exception?.pointer ?? nullptr));
       return JSObject(context, pointer);
     } finally {
-      parameterNames.release();
+      nativeParameterNames.release();
     }
   }
 

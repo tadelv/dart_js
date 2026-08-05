@@ -54,43 +54,50 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
 
   @override
   JsEvalResult evaluate(String js, {String? sourceUrl}) {
-    JSValuePointer exception = JSValuePointer();
-    final jsValueRef = JSString.withStrings(
-        [js, sourceUrl],
-        (strings) => jSEvaluateScript(
-            _globalContext,
-            strings[0],
-            nullptr,
-            strings[1],
-            1,
-            exception.pointer));
+    final exception = JSValuePointer();
+    try {
+      final jsValueRef = JSString.withStrings(
+          [js, sourceUrl],
+          (strings) => jSEvaluateScript(
+              _globalContext,
+              strings[0],
+              nullptr,
+              strings[1],
+              1,
+              exception.pointer));
 
-    String result;
+      String result;
 
-    JSValue exceptionValue = exception.getValue(context);
-    bool isPromise = false;
-    if (exceptionValue.isObject) {
-      result =
-          'ERROR: ${exceptionValue.toObject().getProperty("message").string} \n  at ${exceptionValue.toObject().getProperty("stack").string}';
-    } else {
-      result = _getJsValue(jsValueRef);
-      JSValue resultValue = JSValuePointer(jsValueRef).getValue(context);
+      final exceptionValue = exception.getValue(context);
+      bool isPromise = false;
+      if (exceptionValue.isObject) {
+        result =
+            'ERROR: ${exceptionValue.toObject().getProperty("message").string} \n  at ${exceptionValue.toObject().getProperty("stack").string}';
+      } else {
+        result = _getJsValue(jsValueRef);
+        final resultValue = JSValue(context, jsValueRef);
 
-      isPromise = resultValue.isObject &&
-          resultValue.toObject().getProperty('then').isObject &&
-          resultValue.toObject().getProperty('catch').isObject;
+        isPromise = resultValue.isObject &&
+            resultValue.toObject().getProperty('then').isObject &&
+            resultValue.toObject().getProperty('catch').isObject;
+      }
+
+      return JsEvalResult(
+        result,
+        exceptionValue.isObject
+            ? exceptionValue.toObject().pointer
+            : jsValueRef,
+        isError: result.startsWith('ERROR:'),
+        isPromise: isPromise,
+      );
+    } finally {
+      exception.release();
     }
-
-    return JsEvalResult(
-      result,
-      exceptionValue.isObject ? exceptionValue.toObject().pointer : jsValueRef,
-      isError: result.startsWith('ERROR:'),
-      isPromise: isPromise,
-    );
   }
 
   @override
   void dispose() {
+    context.exception.release();
     jSGlobalContextRelease(_globalContext);
     jSContextGroupRelease(_contextGroup);
   }
@@ -209,33 +216,38 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
 
   @override
   JsEvalResult callFunction(Pointer<NativeType>? fn, Pointer<NativeType>? obj) {
-    JSValue fnValue = JSValuePointer(fn).getValue(context);
-    JSObject functionObj = fnValue.toObject();
-    JSValuePointer exception = JSValuePointer();
-    JSValue result = functionObj.callAsFunction(
-      functionObj,
-      JSValuePointer(obj),
-      exception: exception,
-    );
-    JSValue exceptionValue = exception.getValue(context);
-    bool isPromise = false;
+    final functionObj = JSValue(context, fn ?? nullptr).toObject();
+    final arguments = JSValuePointer(obj);
+    final exception = JSValuePointer();
+    try {
+      final result = functionObj.callAsFunction(
+        functionObj,
+        arguments,
+        exception: exception,
+      );
+      final exceptionValue = exception.getValue(context);
+      bool isPromise = false;
 
-    if (exceptionValue.isObject) {
-      throw Exception(
-          'ERROR: ${exceptionValue.toObject().getProperty("message").string}');
-    } else {
-      isPromise = result.isObject &&
-          result.toObject().getProperty('then').isObject &&
-          result.toObject().getProperty('catch').isObject;
+      if (exceptionValue.isObject) {
+        throw Exception(
+            'ERROR: ${exceptionValue.toObject().getProperty("message").string}');
+      } else {
+        isPromise = result.isObject &&
+            result.toObject().getProperty('then').isObject &&
+            result.toObject().getProperty('catch').isObject;
+      }
+
+      return JsEvalResult(
+        _getJsValue(result.pointer),
+        exceptionValue.isObject
+            ? exceptionValue.toObject().pointer
+            : result.pointer,
+        isPromise: isPromise,
+      );
+    } finally {
+      arguments.release();
+      exception.release();
     }
-
-    return JsEvalResult(
-      _getJsValue(result.pointer),
-      exceptionValue.isObject
-          ? exceptionValue.toObject().pointer
-          : result.pointer,
-      isPromise: isPromise,
-    );
   }
 
   @override
@@ -266,7 +278,7 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
       }
     } else if (jSValueIsObject(_globalContext, jsValue.rawResult) == 1 ||
         jSValueIsArray(_globalContext, jsValue.rawResult) == 1) {
-      JSValue objValue = JSValuePointer(jsValue.rawResult).getValue(context);
+      final objValue = JSValue(context, jsValue.rawResult);
       final serialized = objValue.createJSONString();
       try {
         final string = serialized.string;
@@ -281,7 +293,7 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
 
   @override
   String jsonStringify(JsEvalResult jsValue) {
-    JSValue objValue = JSValuePointer(jsValue.rawResult).getValue(context);
+    final objValue = JSValue(context, jsValue.rawResult);
     final serialized = objValue.createJSONString();
     try {
       return serialized.string!;
