@@ -277,6 +277,21 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
     }
   }
 
+  num? _readNumberProperty(JSObject object, String propertyName) {
+    try {
+      final value = _readProperty(object, propertyName);
+      if (value == null ||
+          value.isNull ||
+          value.isUndefined ||
+          !value.isNumber) {
+        return null;
+      }
+      return value.toNumber();
+    } catch (_) {
+      return null;
+    }
+  }
+
   String? _tryString(JSValue value) {
     try {
       if (value.isNull) return 'null';
@@ -320,10 +335,22 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
         final object = JSObject(context, exceptionRef);
         final message = _readStringProperty(object, 'message');
         final stack = _readStringProperty(object, 'stack');
-        if (message != null || stack != null) {
+        final sourceURL = _readStringProperty(object, 'sourceURL');
+        final line = _readNumberProperty(object, 'line');
+        if (message != null || stack != null || sourceURL != null) {
           final formattedMessage = message ?? 'JavaScript exception';
-          final formattedStack = stack == null ? '' : '\n  at $stack';
-          return 'ERROR: $formattedMessage$formattedStack';
+          // Syntax errors carry no stack; the source location lives in
+          // the sourceURL and line properties.
+          final location = stack ??
+              (sourceURL == null
+                  ? null
+                  : line == null
+                      ? sourceURL
+                      : line % 1 == 0
+                          ? '$sourceURL:${line.toInt()}'
+                          : '$sourceURL:$line');
+          final formattedLocation = location == null ? '' : '\n  at $location';
+          return 'ERROR: $formattedMessage$formattedLocation';
         }
       }
       final fallback = _tryString(value);
