@@ -5,19 +5,25 @@ import 'dart:io';
 
 import 'package:flutter_js/extensions/handle_promises.dart';
 import 'package:flutter_js/extensions/xhr.dart';
+import 'package:flutter_js/javascript_runtime.dart';
 import 'package:flutter_js/javascriptcore/jscore_runtime.dart';
 import 'package:flutter_js/js_eval_result.dart';
+import 'package:flutter_js/quickjs/quickjs_runtime2.dart';
 import 'package:test/test.dart';
 
 void main() {
-  final supported = Platform.isMacOS || Platform.isIOS;
-  final skipReason =
-      supported ? false : 'requires JavaScriptCore on macOS or iOS';
+  final usesJavaScriptCore = Platform.isMacOS || Platform.isIOS;
+  final supported = usesJavaScriptCore || Platform.isWindows;
+  final skipReason = supported ? false : 'requires JavaScriptCore or QuickJS';
+
+  JavascriptRuntime createRuntime() {
+    return usesJavaScriptCore ? JavascriptCoreRuntime() : QuickJsRuntime2();
+  }
 
   test(
-    'JavaScriptCore bridge validates input and contains failures',
+    'JavaScript bridge validates input and contains failures',
     () async {
-      final runtime = JavascriptCoreRuntime();
+      final runtime = createRuntime();
       try {
         var fireAndForgetCalls = 0;
         runtime.onMessage('echo', (dynamic args) => args);
@@ -52,17 +58,23 @@ void main() {
           'sendMessage("echo", "{\\"value\\":42}")',
         );
         expect(response.isError, isFalse);
-        expect(runtime.convertValue<Map<String, dynamic>>(response), {
-          'value': 42,
-        });
+        if (usesJavaScriptCore) {
+          expect(runtime.convertValue<Map<String, dynamic>>(response), {
+            'value': 42,
+          });
+        } else {
+          expect(response.rawResult, {'value': 42});
+        }
 
-        final voidResult = runtime.evaluate('sendMessage("void", "{}")');
+        final voidResult = runtime.evaluate(
+          'typeof sendMessage("void", "{}")',
+        );
         expect(voidResult.isError, isFalse);
         expect(voidResult.stringResult, 'undefined');
         expect(fireAndForgetCalls, 1);
 
         final futureResult = runtime.evaluate(
-          'sendMessage("voidFuture", "{}")',
+          'typeof sendMessage("voidFuture", "{}")',
         );
         expect(futureResult.isError, isFalse);
         expect(futureResult.stringResult, 'undefined');
@@ -84,9 +96,9 @@ void main() {
   );
 
   test(
-    'JavaScriptCore deferred requests resolve, reject, and time out',
+    'JavaScript bridge deferred requests resolve, reject, and time out',
     () async {
-      final runtime = JavascriptCoreRuntime();
+      final runtime = createRuntime();
       try {
         runtime.enableHandlePromises();
         runtime.onMessage(
@@ -115,7 +127,9 @@ void main() {
           timeout: Duration(seconds: 1),
         );
         expect(jsonDecode(resolved.stringResult), {'value': 42});
-        expect(runtime.pendingRequestCount, 0);
+        if (runtime is JavascriptCoreRuntime) {
+          expect(runtime.pendingRequestCount, 0);
+        }
 
         final rejectedPromise = runtime.evaluate(
           'sendMessage("reject", "{}")',
@@ -124,16 +138,20 @@ void main() {
           runtime.handlePromise(rejectedPromise, timeout: Duration(seconds: 1)),
           throwsA(isA<StateError>()),
         );
-        expect(runtime.pendingRequestCount, 0);
+        if (runtime is JavascriptCoreRuntime) {
+          expect(runtime.pendingRequestCount, 0);
+        }
 
         final timeoutPromise = runtime.evaluate(
           'sendMessage("timeout", "{}")',
         );
         await expectLater(
           runtime.handlePromise(timeoutPromise, timeout: Duration(seconds: 1)),
-          throwsA(isA<StateError>()),
+          throwsA(isA<TimeoutException>()),
         );
-        expect(runtime.pendingRequestCount, 0);
+        if (runtime is JavascriptCoreRuntime) {
+          expect(runtime.pendingRequestCount, 0);
+        }
       } finally {
         runtime.dispose();
       }
@@ -142,11 +160,11 @@ void main() {
   );
 
   test(
-    'JavaScriptCore routes channels by native context',
+    'JavaScript bridge keeps channels isolated by runtime',
     () {
-      final first = JavascriptCoreRuntime();
-      final second = JavascriptCoreRuntime();
-      final replacement = JavascriptCoreRuntime();
+      final first = createRuntime();
+      final second = createRuntime();
+      final replacement = createRuntime();
       try {
         first.onMessage('same', (dynamic args) => 'first');
         second.onMessage('same', (dynamic args) => 'second');
@@ -170,29 +188,40 @@ void main() {
   );
 
   test(
-    'JavaScriptCore protects retained values and releases them on disposal',
+    'JavaScript runtime releases retained context values',
     () {
-      final runtime = JavascriptCoreRuntime();
+      final runtime = createRuntime();
       try {
         runtime.enableHandlePromises();
-        final initialCount = runtime.protectedValueCount;
-        final first = runtime.evaluate('(function() {})').rawResult as Pointer;
-        final second = runtime.evaluate('(function() {})').rawResult as Pointer;
+        final initialCount = runtime is JavascriptCoreRuntime
+            ? runtime.protectedValueCount
+            : null;
+        final first = runtime.evaluate('(function() {})').rawResult;
+        final second = runtime.evaluate('(function() {})').rawResult;
 
         runtime.setLocalContextValue('value', first);
-        expect(runtime.protectedValueCount, initialCount + 1);
+        expect(runtime.localContext['value'], same(first));
+        if (runtime is JavascriptCoreRuntime) {
+          expect(runtime.protectedValueCount, initialCount! + 1);
+        }
         runtime.setLocalContextValue('value', second);
-        expect(runtime.protectedValueCount, initialCount + 1);
+        expect(runtime.localContext['value'], same(second));
+        if (runtime is JavascriptCoreRuntime) {
+          expect(runtime.protectedValueCount, initialCount! + 1);
+        }
         runtime.removeLocalContextValue('value');
-        expect(runtime.protectedValueCount, initialCount);
+        expect(runtime.localContext.containsKey('value'), isFalse);
 
-        runtime.retainValue(first);
-        runtime.retainValue(first);
-        expect(runtime.protectedValueCount, initialCount + 1);
-        runtime.releaseValue(first);
-        expect(runtime.protectedValueCount, initialCount + 1);
-        runtime.releaseValue(first);
-        expect(runtime.protectedValueCount, initialCount);
+        if (runtime is JavascriptCoreRuntime) {
+          final pointer = first as Pointer;
+          runtime.retainValue(pointer);
+          runtime.retainValue(pointer);
+          expect(runtime.protectedValueCount, initialCount! + 1);
+          runtime.releaseValue(pointer);
+          expect(runtime.protectedValueCount, initialCount + 1);
+          runtime.releaseValue(pointer);
+          expect(runtime.protectedValueCount, initialCount);
+        }
       } finally {
         runtime.dispose();
       }
@@ -201,9 +230,9 @@ void main() {
   );
 
   test(
-    'JavaScriptCore disposal is terminal and cancels pending work',
+    'JavaScript runtime disposal is terminal and cancels pending work',
     () async {
-      final runtime = JavascriptCoreRuntime();
+      final runtime = createRuntime();
       runtime.enableHandlePromises();
       runtime.onMessage(
         'pending',
@@ -218,33 +247,40 @@ void main() {
       runtime.dispose();
 
       await expectLater(handled, throwsA(isA<StateError>()));
-      expect(runtime.pendingRequestCount, 0);
-      expect(runtime.protectedValueCount, 0);
-      expect(runtime.context.pointer, nullptr);
+      if (runtime is JavascriptCoreRuntime) {
+        expect(runtime.pendingRequestCount, 0);
+        expect(runtime.protectedValueCount, 0);
+        expect(runtime.context.pointer, nullptr);
+      }
       expect(() => runtime.evaluate('1'), throwsA(isA<StateError>()));
       expect(() => runtime.evaluateAsync('1'), throwsA(isA<StateError>()));
       expect(() => runtime.executePendingJob(), throwsA(isA<StateError>()));
-      expect(
-        () => runtime.callFunction(null, null),
-        throwsA(isA<StateError>()),
-      );
       expect(() => runtime.setupBridge('late', (dynamic args) => null),
           throwsA(isA<StateError>()));
-      expect(
-        () => runtime.retainValue(Pointer.fromAddress(1)),
-        throwsA(isA<StateError>()),
-      );
-      expect(
-        () => runtime.setLocalContextValue('late', null),
-        throwsA(isA<StateError>()),
-      );
       expect(() => runtime.enableHandlePromises(), throwsA(isA<StateError>()));
       expect(() => runtime.enableXhr(), throwsA(isA<StateError>()));
-      expect(() => runtime.setInspectable(false), throwsA(isA<StateError>()));
-      expect(
-        () => runtime.convertValue<dynamic>(JsEvalResult('1', nullptr)),
-        throwsA(isA<StateError>()),
-      );
+      if (runtime is JavascriptCoreRuntime) {
+        expect(
+          () => runtime.callFunction(null, null),
+          throwsA(isA<StateError>()),
+        );
+        expect(
+          () => runtime.retainValue(Pointer.fromAddress(1)),
+          throwsA(isA<StateError>()),
+        );
+        expect(
+          () => runtime.setLocalContextValue('late', null),
+          throwsA(isA<StateError>()),
+        );
+        expect(
+          () => runtime.setInspectable(false),
+          throwsA(isA<StateError>()),
+        );
+        expect(
+          () => runtime.convertValue<dynamic>(JsEvalResult('1', nullptr)),
+          throwsA(isA<StateError>()),
+        );
+      }
       expect(
         () => runtime.jsonStringify(JsEvalResult('1', nullptr)),
         throwsA(isA<StateError>()),
