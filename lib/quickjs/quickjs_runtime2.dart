@@ -140,12 +140,16 @@ class QuickJsRuntime2 extends JavascriptRuntime {
     _rt = null;
     _ctx = null;
     if (ctx != null) jsFreeContext(ctx);
-    if (rt == null) return;
+    if (rt == null) {
+      localContext.clear();
+      return;
+    }
     _executePendingJob();
     try {
       for (final obj in localContext.values) {
         JSRef.freeRecursive(obj);
       }
+      localContext.clear();
       jsFreeRuntime(rt);
     } on String catch (e) {
       throw JSError(e);
@@ -184,6 +188,7 @@ class QuickJsRuntime2 extends JavascriptRuntime {
     int? evalFlags,
     String? sourceUrl,
   }) {
+    ensureRuntimeActive();
     _ensureEngine();
     final ctx = _ctx!;
     final jsval = jsEval(
@@ -215,12 +220,18 @@ class QuickJsRuntime2 extends JavascriptRuntime {
 
   @override
   void dispose() {
+    if (!beginDispose()) return;
     try {
-      JavascriptRuntime.channelFunctionsRegistered[getEngineInstanceId()]?.clear();
       port.close(); // stop dispatch loop
+      cancelRuntimeTimers();
+      runDisposeCallbacks();
       close(); // close engine
     } on JSError catch (e) {
       print(e); // catch reference leak exception
+    } finally {
+      channelFunctions.clear();
+      clearDartContext();
+      finishDispose();
     }
   }
 
@@ -231,6 +242,7 @@ class QuickJsRuntime2 extends JavascriptRuntime {
 
   @override
   int executePendingJob() {
+    ensureRuntimeActive();
     this.dispatch();
     return 0;
   }
@@ -242,18 +254,16 @@ class QuickJsRuntime2 extends JavascriptRuntime {
 
   @override
   void initChannelFunctions() {
-    JavascriptRuntime.channelFunctionsRegistered[getEngineInstanceId()] = {};
     final setToGlobalObject =
         evaluate("(key, val) => { this[key] = val; }").rawResult;
-    localContext['setToGlobalObject'] = setToGlobalObject;
+    setLocalContextValue('setToGlobalObject', setToGlobalObject);
     (setToGlobalObject as JSInvokable).invoke([
       'sendMessage',
       (String channelName, String message) {
-        final channelFunctions = JavascriptRuntime
-            .channelFunctionsRegistered[getEngineInstanceId()]!;
-
-        if (channelFunctions.containsKey(channelName)) {
-          return channelFunctions[channelName]!.call(jsonDecode(message));
+        final registration = channelFunctions[channelName];
+        if (registration != null) {
+          final result = registration.callback(jsonDecode(message));
+          return registration.fireAndForget ? null : result;
         } else {
           print('No channel $channelName registered');
         }
@@ -266,18 +276,7 @@ class QuickJsRuntime2 extends JavascriptRuntime {
 
   @override
   String jsonStringify(JsEvalResult jsValue) {
+    ensureRuntimeActive();
     throw UnimplementedError();
-  }
-
-  @override
-  bool setupBridge(String channelName, void Function(dynamic args) fn) {
-    final channelFunctionCallbacks =
-        JavascriptRuntime.channelFunctionsRegistered[getEngineInstanceId()]!;
-
-    if (channelFunctionCallbacks.keys.contains(channelName)) return false;
-
-    channelFunctionCallbacks[channelName] = fn;
-
-    return true;
   }
 }

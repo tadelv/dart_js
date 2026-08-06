@@ -118,9 +118,7 @@ class QuickJsService extends JavascriptRuntime {
   }
 
   @override
-  void initChannelFunctions() {
-    JavascriptRuntime.channelFunctionsRegistered[getEngineInstanceId()] = {};
-  }
+  void initChannelFunctions() {}
 
   @override
   String jsonStringify(JsEvalResult jsValue) {
@@ -133,20 +131,31 @@ class QuickJsService extends JavascriptRuntime {
   }
 
   @override
-  bool setupBridge(String channelName, dynamic Function(dynamic args) fn) {
-    // final channelFunctionCallbacks =
-    //     JavascriptRuntime.channelFunctionsRegistered[getEngineInstanceId()];
-    // if (channelFunctionCallbacks.keys.contains(channelName)) return false;
-
-    // channelFunctionCallbacks[channelName] = fn;
+  bool setupBridge(
+    String channelName,
+    JavascriptMessageCallback fn, {
+    bool fireAndForget = false,
+    Duration timeout = const Duration(seconds: 30),
+  }) {
+    ensureRuntimeActive();
+    if (channelFunctions.containsKey(channelName)) return false;
+    final registration = JavascriptChannelRegistration(
+      callback: fn,
+      fireAndForget: fireAndForget,
+      timeout: timeout,
+    );
+    channelFunctions[channelName] = registration;
     _flutterJs.addChannel(channelName, (args) {
       final mapArgs = json.decode(args!);
-      final res = fn(mapArgs);
-      this.evaluate("""
-         FLUTTERJS_pendingMessages['${mapArgs['id']}'].resolve(${json.encode(res)});
-      """
-          .trim());
-      return Future.value(res);
+      final result = registration.callback(mapArgs);
+      if (registration.fireAndForget) return Future.value('null');
+      return Future.sync(() => result).then((res) {
+        this.evaluate("""
+           FLUTTERJS_pendingMessages['${mapArgs['id']}'].resolve(${json.encode(res)});
+        """
+            .trim());
+        return json.encode(res);
+      });
     }, dartChannelAddress: 'http://$_dartAddress');
 
     return true;

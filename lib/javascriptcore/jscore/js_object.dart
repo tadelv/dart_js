@@ -962,7 +962,7 @@ class JSObject {
   /// [exception] (JSValueRef*) A pointer to a JSValueRef in which to store an exception, if any. Pass NULL if you do not care to store an exception.
   /// [@result] (JSValue) The JSValue that results from calling object as a function, or NULL if an exception is thrown or object is not a function.
   JSValue callAsFunction(
-    JSObject thisObject,
+    JSObject? thisObject,
     JSValuePointer arguments, {
     JSValuePointer? exception,
   }) {
@@ -972,7 +972,7 @@ class JSObject {
         JSObjectRef.jSObjectCallAsFunction(
             context.pointer,
             pointer,
-            thisObject.pointer,
+            thisObject?.pointer ?? nullptr,
             arguments.count,
             arguments.pointer,
             exception?.pointer ?? nullptr));

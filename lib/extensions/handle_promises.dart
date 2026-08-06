@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi';
 
 import 'package:flutter_js/javascript_runtime.dart';
 import 'package:flutter_js/js_eval_result.dart';
@@ -6,129 +7,92 @@ import 'package:flutter_js/js_eval_result.dart';
 const REGISTER_PROMISE_FUNCTION = 'FLUTTER_NATIVEJS_REGISTER_PROMISE';
 
 extension HandlePromises on JavascriptRuntime {
-  enableHandlePromises() {
-    final fnRegisterPromise = evaluate(""" 
-     var FLUTTER_NATIVEJS_PENDING_PROMISES = {};
+  void enableHandlePromises() {
+    final fnRegisterPromise = evaluate('''
+      var FLUTTER_NATIVEJS_PENDING_PROMISES = {};
       var FLUTTER_NATIVEJS_PENDING_PROMISES_COUNT = -1;
-
       function $REGISTER_PROMISE_FUNCTION(promise) {
         FLUTTER_NATIVEJS_PENDING_PROMISES_COUNT += 1;
-        idx = FLUTTER_NATIVEJS_PENDING_PROMISES_COUNT;
-        FLUTTER_NATIVEJS_PENDING_PROMISES[idx] = FLUTTER_NATIVEJS_MakeQuerablePromise(promise);
+        var idx = FLUTTER_NATIVEJS_PENDING_PROMISES_COUNT;
+        FLUTTER_NATIVEJS_PENDING_PROMISES[idx] =
+            FLUTTER_NATIVEJS_MakeQuerablePromise(promise);
         return idx;
       }
-    """);
-    final fnMakeQPResult = evaluate("""
+    ''');
+    final fnMakeQPResult = evaluate('''
       function FLUTTER_NATIVEJS_CLEAN_PROMISE(idx) {
         delete FLUTTER_NATIVEJS_PENDING_PROMISES[idx];
       }
-
       function FLUTTER_NATIVEJS_IS_PENDING_PROMISE(idx) {
         return FLUTTER_NATIVEJS_PENDING_PROMISES[idx].isPending();
       }
-
       function FLUTTER_NATIVEJS_IS_FULLFILLED_PROMISE(idx) {
         return FLUTTER_NATIVEJS_PENDING_PROMISES[idx].isFulfilled();
       }
-
       function FLUTTER_NATIVEJS_IS_REJECTED_PROMISE(idx) {
         return FLUTTER_NATIVEJS_PENDING_PROMISES[idx].isRejected();
       }
-      
-      /**
-       * This function allow you to modify a JS Promise by adding some status properties.
-       * Based on: http://stackoverflow.com/questions/21485545/is-there-a-way-to-tell-if-an-es6-promise-is-fulfilled-rejected-resolved
-       * But modified according to the specs of promises : https://promisesaplus.com/
-       */
       function FLUTTER_NATIVEJS_MakeQuerablePromise(promise) {
-          // Don't modify any promise that has been already modified.
-          if (promise.isResolved) return promise;
-
-          // Set initial state
-          var isPending = true;
-          var isRejected = false;
-          var isFulfilled = false;
-          var value = null;
-
-          // Observe the promise, saving the fulfillment in a closure scope.
-          var result = promise.then(
-              function(v) {
-                  isFulfilled = true;
-                  isPending = false;
-                  value = v;
-                  return v; 
-              }, 
-              function(e) {
-                  isRejected = true;
-                  isPending = false;
-                  value = e; 
-              }
-          );
-
-          result.isFulfilled = function() { return isFulfilled; };
-          result.isPending = function() { return isPending; };
-          result.isRejected = function() { return isRejected; };
-          result.getValue = function() { return value };
-          return result;
+        if (promise.isResolved) return promise;
+        var isPending = true;
+        var isRejected = false;
+        var isFulfilled = false;
+        var value = null;
+        var result = promise.then(
+          function(v) {
+            isFulfilled = true;
+            isPending = false;
+            value = v;
+            return v;
+          },
+          function(e) {
+            isRejected = true;
+            isPending = false;
+            value = e;
+          }
+        );
+        result.isFulfilled = function() { return isFulfilled; };
+        result.isPending = function() { return isPending; };
+        result.isRejected = function() { return isRejected; };
+        result.getValue = function() { return value; };
+        return result;
       }
       FLUTTER_NATIVEJS_MakeQuerablePromise;
-    """);
+    ''');
 
-    localContext['makeQuerablePromise'] = fnMakeQPResult.rawResult;
-    localContext['registerPromise'] = fnRegisterPromise.rawResult;
+    if (fnRegisterPromise.isError || fnMakeQPResult.isError) {
+      throw StateError('Could not initialize JavaScript promise handling');
+    }
+    setLocalContextValue('makeQuerablePromise', fnMakeQPResult.rawResult);
+    setLocalContextValue('registerPromise', fnRegisterPromise.rawResult);
   }
 
   bool isPendingPromise(int idx) {
-    String resultIsPending =
-        evaluate("FLUTTER_NATIVEJS_IS_PENDING_PROMISE($idx)").stringResult;
-
-    return "true" == resultIsPending;
+    return evaluate('FLUTTER_NATIVEJS_IS_PENDING_PROMISE($idx)').stringResult ==
+        'true';
   }
 
   bool isFulfilledPromise(int idx) {
-    return "true" ==
-        evaluate("FLUTTER_NATIVEJS_IS_FULLFILLED_PROMISE($idx)").stringResult;
+    return evaluate(
+          'FLUTTER_NATIVEJS_IS_FULLFILLED_PROMISE($idx)',
+        ).stringResult ==
+        'true';
   }
 
-  Future<JsEvalResult> handlePromise(JsEvalResult value,
-      {Duration? timeout}) async {
-    final completer = Completer<JsEvalResult>();
-
-    if (timeout != null) {
-      return _doHandlePromise(value, completer).timeout(timeout);
-    } else {
-      return _doHandlePromise(value, completer);
-    }
+  Future<JsEvalResult> handlePromise(
+    JsEvalResult value, {
+    Duration? timeout,
+  }) {
+    return _doHandlePromise(value, timeout: timeout);
   }
 
   Future<JsEvalResult> _doHandlePromise(
-      JsEvalResult value, Completer completer) async {
-    if (value.stringResult.contains('Instance of \'Future')) {
-      var completed = false;
-      Function? fnEvaluatePromise;
-      fnEvaluatePromise = () async {
-        this.executePendingJob();
-        if (!completed) {
-          await Future.delayed(
-              Duration(milliseconds: 20), () => fnEvaluatePromise!.call());
-        } else {
-          if (JavascriptRuntime.debugEnabled) {
-            print('Promise completed');
-          }
-        }
-      };
-      Future.delayed(
-          Duration(milliseconds: 20), () => fnEvaluatePromise!.call());
-
-      // Future.delayed(Duration(seconds: 1), () {
-      //   this.executePendingJob();
-      // });
-      return await (value.rawResult as Future<dynamic>).then((dynamic res) {
-        final resEval = JsEvalResult("$res", value.rawResult);
-        completer.complete(resEval);
-        completed = true;
-        return resEval;
-      });
+    JsEvalResult value, {
+    Duration? timeout,
+  }) {
+    ensureRuntimeActive();
+    if (value.stringResult.contains("Instance of 'Future")) {
+      return _handleDartFuture(value, timeout);
     }
     if (value.stringResult != '[object Promise]') return Future.value(value);
 
@@ -136,42 +100,137 @@ extension HandlePromises on JavascriptRuntime {
     if (fnRegisterPromiseFunction.isError) {
       throw StateError(fnRegisterPromiseFunction.stringResult);
     }
-    final evalRegisterPromise = fnRegisterPromiseFunction.rawResult;
-    // print(fnRegisterPromiseFunction);
-    // todo: investigate - application is crashing around this point
-    final registerResult = callFunction(evalRegisterPromise, value.rawResult);
+    final registerResult = callFunction(
+      fnRegisterPromiseFunction.rawResult,
+      value.rawResult,
+    );
     if (registerResult.isError) {
       throw StateError(registerResult.stringResult);
     }
-    final promiseQuerableIdx = registerResult.stringResult;
-    int idxPromise = int.parse(promiseQuerableIdx);
-    Timer.periodic(Duration(milliseconds: 20), (timer) {
-      // call to _JS_ExecutePendingJob
-      this.executePendingJob();
-      //eval(REGISTER_PROMISE_FUNCTION);
-      // REFERENCE: https://github.com/p7s1digital/oasis-jsbridge-android/blob/3b104ec46d4817a0688e2e50e18eb3e5b2976485/jsbridge/src/main/jni/JsBridgeContext_quickjs.cpp#L343
-      //  * https://github.com/p7s1digital/oasis-jsbridge-android/blob/82e2cb0211cefc4ae74675a4fa59ea3e4f2845f0/jsbridge/src/main/jni/java-types/Deferred_quickjs.cpp
-      //  * https://medium.com/@calbertts/how-to-create-asynchronous-apis-for-quickjs-8aca5488bb2e
-      //  * https://docs.rs/crate/quick-js/0.2.3/source/src/bindings.rs
+    final idxPromise = int.parse(registerResult.stringResult);
+    final completer = Completer<JsEvalResult>();
+    final retainedPromise =
+        value.rawResult is Pointer ? value.rawResult as Pointer : null;
+    if (retainedPromise != null) retainValue(retainedPromise);
+    Timer? pollTimer;
+    Timer? timeoutTimer;
+    var completed = false;
+    late void Function() cleanup;
 
-      //  * Vue view generation using QuickJS - https://github.com/galvez/fast-vue-ssr/
-      if (!isPendingPromise(idxPromise)) {
-        timer.cancel();
-        final value = evaluate(
-          "JSON.stringify(FLUTTER_NATIVEJS_PENDING_PROMISES[$idxPromise].getValue())",
-        );
+    cleanup = () {
+      if (completed) return;
+      completed = true;
+      pollTimer?.cancel();
+      timeoutTimer?.cancel();
+      if (pollTimer != null) unregisterRuntimeTimer(pollTimer);
+      if (timeoutTimer != null) unregisterRuntimeTimer(timeoutTimer);
+      if (retainedPromise != null) releaseValue(retainedPromise);
+      unregisterDisposeCallback(cleanup);
+    };
 
-        final isFullfilled = isFulfilledPromise(idxPromise);
+    void completeError(Object error) {
+      cleanup();
+      if (!completer.isCompleted) completer.completeError(error);
+    }
 
-        evaluate("FLUTTER_NATIVEJS_CLEAN_PROMISE($idxPromise);");
+    void completeResult(JsEvalResult result) {
+      cleanup();
+      if (!completer.isCompleted) completer.complete(result);
+    }
 
-        if (isFullfilled) {
-          completer.complete(value);
-        } else {
-          completer.completeError(value);
+    registerDisposeCallback(
+      () => completeError(StateError('JavaScript runtime disposed')),
+    );
+    if (timeout != null) {
+      timeoutTimer = Timer(
+        timeout,
+        () => completeError(TimeoutException('JavaScript promise timed out')),
+      );
+      registerRuntimeTimer(timeoutTimer);
+    }
+    pollTimer = Timer.periodic(Duration(milliseconds: 20), (_) {
+      if (!isRuntimeActive) {
+        completeError(StateError('JavaScript runtime disposed'));
+        return;
+      }
+      try {
+        executePendingJob();
+        if (!isPendingPromise(idxPromise)) {
+          final result = evaluate(
+            'JSON.stringify(FLUTTER_NATIVEJS_PENDING_PROMISES[$idxPromise].getValue())',
+          );
+          final isFulfilled = isFulfilledPromise(idxPromise);
+          evaluate('FLUTTER_NATIVEJS_CLEAN_PROMISE($idxPromise);');
+          if (isFulfilled) {
+            completeResult(result);
+          } else {
+            completeError(StateError(result.stringResult));
+          }
         }
+      } catch (error) {
+        completeError(error);
       }
     });
-    return completer.future as Future<JsEvalResult>;
+    registerRuntimeTimer(pollTimer);
+    return completer.future;
+  }
+
+  Future<JsEvalResult> _handleDartFuture(
+    JsEvalResult value,
+    Duration? timeout,
+  ) {
+    final completer = Completer<JsEvalResult>();
+    Timer? pollTimer;
+    Timer? timeoutTimer;
+    var completed = false;
+    late void Function() cleanup;
+
+    cleanup = () {
+      if (completed) return;
+      completed = true;
+      pollTimer?.cancel();
+      timeoutTimer?.cancel();
+      if (pollTimer != null) unregisterRuntimeTimer(pollTimer);
+      if (timeoutTimer != null) unregisterRuntimeTimer(timeoutTimer);
+      unregisterDisposeCallback(cleanup);
+    };
+
+    void completeError(Object error) {
+      cleanup();
+      if (!completer.isCompleted) completer.completeError(error);
+    }
+
+    registerDisposeCallback(
+      () => completeError(StateError('JavaScript runtime disposed')),
+    );
+    if (timeout != null) {
+      timeoutTimer = Timer(
+        timeout,
+        () => completeError(TimeoutException('JavaScript promise timed out')),
+      );
+      registerRuntimeTimer(timeoutTimer);
+    }
+    pollTimer = Timer.periodic(Duration(milliseconds: 20), (_) {
+      if (!isRuntimeActive) {
+        completeError(StateError('JavaScript runtime disposed'));
+        return;
+      }
+      try {
+        executePendingJob();
+      } catch (error) {
+        completeError(error);
+      }
+    });
+    registerRuntimeTimer(pollTimer);
+    (value.rawResult as Future<dynamic>).then<void>(
+      (dynamic result) {
+        cleanup();
+        if (!completer.isCompleted) {
+          completer.complete(JsEvalResult('$result', value.rawResult));
+        }
+      },
+      onError: (Object error, StackTrace stack) => completeError(error),
+    );
+    return completer.future;
   }
 }

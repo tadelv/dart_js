@@ -5,6 +5,22 @@ import 'dart:ffi';
 import 'js_eval_result.dart';
 import 'package:meta/meta.dart';
 
+typedef JavascriptMessageCallback = FutureOr<dynamic> Function(dynamic args);
+
+class JavascriptChannelRegistration {
+  final JavascriptMessageCallback callback;
+  final bool fireAndForget;
+  final Duration timeout;
+
+  const JavascriptChannelRegistration({
+    required this.callback,
+    required this.fireAndForget,
+    required this.timeout,
+  });
+}
+
+enum JavascriptRuntimeLifecycle { active, disposing, disposed }
+
 class FlutterJsPlatformEmpty extends JavascriptRuntime {
   @override
   JsEvalResult callFunction(Pointer<NativeType> fn, Pointer<NativeType> obj) {
@@ -50,7 +66,12 @@ class FlutterJsPlatformEmpty extends JavascriptRuntime {
   }
 
   @override
-  bool setupBridge(String channelName, void Function(dynamic args) fn) {
+  bool setupBridge(
+    String channelName,
+    JavascriptMessageCallback fn, {
+    bool fireAndForget = false,
+    Duration timeout = const Duration(seconds: 30),
+  }) {
     throw UnimplementedError();
   }
 
@@ -71,17 +92,99 @@ abstract class JavascriptRuntime {
     return this;
   }
 
-  Map<String, dynamic> localContext = {};
+  final Map<String, dynamic> localContext = {};
 
-  Map<String, dynamic> dartContext = {};
+  final Map<String, dynamic> dartContext = {};
 
   void dispose();
 
-  static Map<String, Map<String, Function(dynamic arg)>>
-      _channelFunctionsRegistered = {};
+  final Map<String, JavascriptChannelRegistration> channelFunctions = {};
 
-  static Map<String, Map<String, Function(dynamic arg)>>
-      get channelFunctionsRegistered => _channelFunctionsRegistered;
+  JavascriptRuntimeLifecycle _lifecycle = JavascriptRuntimeLifecycle.active;
+  final Set<void Function()> _disposeCallbacks = {};
+  final Set<Timer> _runtimeTimers = {};
+
+  bool get isRuntimeActive => _lifecycle == JavascriptRuntimeLifecycle.active;
+
+  void ensureRuntimeActive() {
+    if (!isRuntimeActive) {
+      throw StateError('JavaScript runtime is not active');
+    }
+  }
+
+  bool beginDispose() {
+    if (_lifecycle != JavascriptRuntimeLifecycle.active) return false;
+    _lifecycle = JavascriptRuntimeLifecycle.disposing;
+    return true;
+  }
+
+  void finishDispose() {
+    _lifecycle = JavascriptRuntimeLifecycle.disposed;
+  }
+
+  void registerDisposeCallback(void Function() callback) {
+    ensureRuntimeActive();
+    _disposeCallbacks.add(callback);
+  }
+
+  void unregisterDisposeCallback(void Function() callback) {
+    _disposeCallbacks.remove(callback);
+  }
+
+  void registerRuntimeTimer(Timer timer) {
+    ensureRuntimeActive();
+    _runtimeTimers.add(timer);
+  }
+
+  void unregisterRuntimeTimer(Timer timer) {
+    _runtimeTimers.remove(timer);
+  }
+
+  void cancelRuntimeTimers() {
+    final timers = List<Timer>.of(_runtimeTimers);
+    _runtimeTimers.clear();
+    for (final timer in timers) {
+      timer.cancel();
+    }
+  }
+
+  void runDisposeCallbacks() {
+    final callbacks = List<void Function()>.of(_disposeCallbacks);
+    _disposeCallbacks.clear();
+    for (final callback in callbacks) {
+      try {
+        callback();
+      } catch (error) {
+        if (debugEnabled) print('Runtime cleanup failed: $error');
+      }
+    }
+  }
+
+  void setLocalContextValue(String key, dynamic value) {
+    localContext[key] = value;
+  }
+
+  void removeLocalContextValue(String key) {
+    localContext.remove(key);
+  }
+
+  void clearLocalContext() {
+    localContext.clear();
+  }
+
+  void clearDartContext() {
+    dartContext.clear();
+  }
+
+  void clearRuntimeState() {
+    channelFunctions.clear();
+    clearLocalContext();
+    clearDartContext();
+  }
+
+  void retainValue(Pointer pointer) {}
+
+  void releaseValue(Pointer pointer) {}
 
   JsEvalResult evaluate(String code, {String? sourceUrl});
 
@@ -111,9 +214,8 @@ abstract class JavascriptRuntime {
         sendMessage('ConsoleLog', JSON.stringify(['error', ...arguments]));
       }
     }""");
-    onMessage('ConsoleLog', (dynamic args) {
-      args..removeAt(0);
-      String output = args.join(' ');
+    onMessageVoid('ConsoleLog', (dynamic args) {
+      final output = (args as List<dynamic>).skip(1).join(' ');
       print(output);
     });
   }
@@ -140,22 +242,19 @@ abstract class JavascriptRuntime {
       1
     """);
     //print('SET TIMEOUT EVAL RESULT: $setTImeoutResult');
-    onMessage('SetTimeout', (dynamic args) {
-      try {
-        int duration = args['timeout'] ?? 0;
-        String idx = args['timeoutIndex'];
-
-        Timer(Duration(milliseconds: duration), () {
-          evaluate("""
-            __NATIVE_FLUTTER_JS__setTimeoutCallbacks[$idx].call();
-            delete __NATIVE_FLUTTER_JS__setTimeoutCallbacks[$idx];
-          """);
-        });
-      } on Exception catch (e) {
-        print('Exception no setTimeout: $e');
-      } on Error catch (e) {
-        print('Erro no setTimeout: $e');
-      }
+    onMessageVoid('SetTimeout', (dynamic args) {
+      final duration = args['timeout'] as int? ?? 0;
+      final idx = args['timeoutIndex'] as String;
+      late Timer timer;
+      timer = Timer(Duration(milliseconds: duration), () {
+        unregisterRuntimeTimer(timer);
+        if (!isRuntimeActive) return;
+        evaluate("""
+          __NATIVE_FLUTTER_JS__setTimeoutCallbacks[$idx].call();
+          delete __NATIVE_FLUTTER_JS__setTimeoutCallbacks[$idx];
+        """);
+      });
+      registerRuntimeTimer(timer);
     });
   }
 
@@ -173,11 +272,43 @@ abstract class JavascriptRuntime {
     }
   }
 
-  onMessage(String channelName, dynamic Function(dynamic args) fn) {
-    setupBridge(channelName, fn);
+  bool onMessage(
+    String channelName,
+    JavascriptMessageCallback fn, {
+    Duration timeout = const Duration(seconds: 30),
+  }) {
+    return setupBridge(channelName, fn, timeout: timeout);
   }
 
-  bool setupBridge(String channelName, void Function(dynamic args) fn);
+  bool onMessageVoid(
+    String channelName,
+    FutureOr<void> Function(dynamic args) fn,
+  ) {
+    return setupBridge(
+      channelName,
+      (args) => Future<void>.sync(() => fn(args)),
+      fireAndForget: true,
+    );
+  }
+
+  bool setupBridge(
+    String channelName,
+    JavascriptMessageCallback fn, {
+    bool fireAndForget = false,
+    Duration timeout = const Duration(seconds: 30),
+  }) {
+    ensureRuntimeActive();
+    if (timeout <= Duration.zero) {
+      throw ArgumentError.value(timeout, 'timeout', 'must be positive');
+    }
+    if (channelFunctions.containsKey(channelName)) return false;
+    channelFunctions[channelName] = JavascriptChannelRegistration(
+      callback: fn,
+      fireAndForget: fireAndForget,
+      timeout: timeout,
+    );
+    return true;
+  }
 
   String getEngineInstanceId();
 
