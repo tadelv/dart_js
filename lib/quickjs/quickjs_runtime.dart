@@ -14,8 +14,7 @@ final DynamicLibrary qjsDynamicLibrary = Platform.isAndroid
         ? DynamicLibrary.open('flutter_js_plugin.dll')
         : DynamicLibrary.process());
 
-typedef FnBridgeCallback = Function(
-    dynamic args); //String Function(String channel, String message);
+typedef FnBridgeCallback = JavascriptMessageCallback;
 
 final Map<String, FnBridgeCallback> mapJsBridge = {};
 
@@ -28,7 +27,7 @@ Pointer<JSValueConst> bridgeCallbackGlobalHandler(
   String messageStr = Utf8NullTerminated.fromUtf8(message);
 
   if (mapJsBridge.containsKey(channelNameStr)) {
-    String? result = 'NO RESULT YET';
+    dynamic result = 'NO RESULT YET';
     try {
       result = mapJsBridge[channelNameStr]!.call(jsonDecode(messageStr));
     } on Error catch (e) {
@@ -296,7 +295,12 @@ class QuickJsRuntime extends JavascriptRuntime {
   }
 
   @override
-  bool setupBridge(String channelName, void Function(dynamic args) fn) {
+  bool setupBridge(
+    String channelName,
+    JavascriptMessageCallback fn, {
+    bool fireAndForget = false,
+    Duration timeout = const Duration(seconds: 30),
+  }) {
     mapJsBridge[channelName] = fn;
     return true;
   }

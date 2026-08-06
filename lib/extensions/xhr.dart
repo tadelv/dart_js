@@ -247,102 +247,116 @@ xhrSetHttpClient(http.Client client) {
 
 extension JavascriptRuntimeXhrExtension on JavascriptRuntime {
   List<dynamic>? getPendingXhrCalls() {
+    ensureRuntimeActive();
     return dartContext[XHR_PENDING_CALLS_KEY];
   }
 
-  bool hasPendingXhrCalls() => getPendingXhrCalls()!.length > 0;
+  bool hasPendingXhrCalls() => getPendingXhrCalls()?.isNotEmpty ?? false;
+
   void clearXhrPendingCalls() {
+    ensureRuntimeActive();
     dartContext[XHR_PENDING_CALLS_KEY] = [];
   }
 
   JavascriptRuntime enableXhr() {
-    httpClient = httpClient ?? http.Client();
+    ensureRuntimeActive();
+    final client = httpClient ?? http.Client();
+    final ownsClient = httpClient == null;
     dartContext[XHR_PENDING_CALLS_KEY] = [];
+    Timer? pollingTimer;
+    var disposed = false;
 
-    Timer.periodic(Duration(milliseconds: 40), (timer) {
-      // exits if there is no pending call to remote
-      if (!hasPendingXhrCalls()) return;
+    void cleanup() {
+      disposed = true;
+      pollingTimer?.cancel();
+      if (pollingTimer != null) unregisterRuntimeTimer(pollingTimer);
+      dartContext.remove(XHR_PENDING_CALLS_KEY);
+      if (ownsClient) client.close();
+    }
 
-      // collect the pending calls into a local variable making copies
-      List<dynamic> pendingCalls = List<dynamic>.from(getPendingXhrCalls()!);
-      // clear the global pending calls list
-      clearXhrPendingCalls();
+    registerDisposeCallback(cleanup);
 
-      // for each pending call, calls the remote http service
-      pendingCalls.forEach((element) async {
-        XhrPendingCall pendingCall = element as XhrPendingCall;
-        HttpMethod eMethod = HttpMethod.values.firstWhere((e) =>
-            e.toString().toLowerCase() ==
-            ("HttpMethod.${pendingCall.method}".toLowerCase()));
+    Future<void> process(XhrPendingCall pendingCall) async {
+      if (disposed || !isRuntimeActive) return;
+      try {
         late http.Response response;
-        switch (eMethod) {
+        final uri = Uri.parse(pendingCall.url!);
+        switch (HttpMethod.values.firstWhere(
+          (method) =>
+              method.toString().toLowerCase() ==
+              'HttpMethod.${pendingCall.method}'.toLowerCase(),
+        )) {
           case HttpMethod.head:
-            response = await httpClient!.head(
-              Uri.parse(pendingCall.url!),
-              headers: pendingCall.headers,
-            );
+            response = await client.head(uri, headers: pendingCall.headers);
             break;
           case HttpMethod.get:
-            response = await httpClient!.get(
-              Uri.parse(pendingCall.url!),
-              headers: pendingCall.headers,
-            );
+            response = await client.get(uri, headers: pendingCall.headers);
             break;
           case HttpMethod.post:
-            response = await httpClient!.post(
-              Uri.parse(pendingCall.url!),
-              body: (pendingCall.body is String)
+            response = await client.post(
+              uri,
+              body: pendingCall.body is String
                   ? pendingCall.body
                   : jsonEncode(pendingCall.body),
               headers: pendingCall.headers,
             );
             break;
           case HttpMethod.put:
-            response = await httpClient!.put(
-              Uri.parse(pendingCall.url!),
-              body: (pendingCall.body is String)
+            response = await client.put(
+              uri,
+              body: pendingCall.body is String
                   ? pendingCall.body
                   : jsonEncode(pendingCall.body),
               headers: pendingCall.headers,
             );
             break;
           case HttpMethod.patch:
-            response = await httpClient!.patch(
-              Uri.parse(pendingCall.url!),
-              body: (pendingCall.body is String)
+            response = await client.patch(
+              uri,
+              body: pendingCall.body is String
                   ? pendingCall.body
                   : jsonEncode(pendingCall.body),
               headers: pendingCall.headers,
             );
             break;
           case HttpMethod.delete:
-            response = await httpClient!.delete(
-              Uri.parse(pendingCall.url!),
-              headers: pendingCall.headers,
-            );
+            response = await client.delete(uri, headers: pendingCall.headers);
             break;
         }
-        // assuming request was successfully executed
-        String responseText = utf8.decode(response.bodyBytes);
+        if (disposed || !isRuntimeActive) return;
+        var responseText = utf8.decode(response.bodyBytes);
         try {
           responseText = jsonEncode(json.decode(responseText));
-        } on Exception {}
+        } on Object {}
         final xhrResult = XmlHttpRequestResponse(
           responseText: responseText,
-          responseInfo:
-              XhtmlHttpResponseInfo(statusCode: 200, statusText: "OK"),
+          responseInfo: XhtmlHttpResponseInfo(
+            statusCode: response.statusCode,
+            statusText: response.reasonPhrase ?? '',
+          ),
         );
-
         final responseInfo = jsonEncode(xhrResult.responseInfo);
-        //final responseText = xhrResult.responseText; //.replaceAll("\\n", "\\\n");
-        final error = xhrResult.error;
-        // send back to the javascript environment the
-        // response for the http pending callback
-        this.evaluate(
-          "globalThis.xhrRequests[${pendingCall.idRequest}].callback($responseInfo, `$responseText`, $error);",
-        );
-      });
+        final callback =
+            'globalThis.xhrRequests[${pendingCall.idRequest}].callback('
+            '${jsonEncode(jsonDecode(responseInfo))},'
+            '${jsonEncode(responseText)},${jsonEncode(xhrResult.error)});';
+        evaluate(callback);
+      } on Object catch (error) {
+        if (isRuntimeActive && _XHR_DEBUG) {
+          print('XHR request failed: $error');
+        }
+      }
+    }
+
+    pollingTimer = Timer.periodic(Duration(milliseconds: 40), (timer) {
+      if (disposed || !isRuntimeActive) return;
+      final pendingCalls = List<dynamic>.from(getPendingXhrCalls() ?? const []);
+      clearXhrPendingCalls();
+      for (final element in pendingCalls) {
+        unawaited(process(element as XhrPendingCall));
+      }
     });
+    registerRuntimeTimer(pollingTimer);
 
     final evalXhrSendNative = this.evaluate("""
     var xhrRequests = {};
@@ -367,43 +381,29 @@ extension JavascriptRuntimeXhrExtension on JavascriptRuntime {
     """);
 
     final evalXhrResult = this.evaluate(xhrJsCode);
-    localContext['enableXhr'] = evalXhrResult.rawResult;
-    localContext['xhrSendNative'] = evalXhrSendNative.rawResult;
+    setLocalContextValue('enableXhr', evalXhrResult.rawResult);
+    setLocalContextValue('xhrSendNative', evalXhrSendNative.rawResult);
     if (_XHR_DEBUG) print('RESULT evalXhrResult: $evalXhrResult');
 
-    this.onMessage('SendNative', (arguments) {
-      try {
-        String? method = arguments[0];
-        String? url = arguments[1];
-        dynamic headersList = arguments[2];
-        String? body = arguments[3];
-        int? idRequest = arguments[4];
-
-        Map<String, String> headers = {};
-        headersList.forEach((header) {
-          // final headerMatch = regexpHeader.allMatches(value).first;
-          // String? headerName = headerMatch.group(0);
-          // String? headerValue = headerMatch.group(1);
-          // if (headerName != null) {
-          //   headers[headerName] = headerValue ?? '';
-          // }
-          String headerKey = header[0];
-          headers[headerKey] = header[1];
-        });
-        (dartContext[XHR_PENDING_CALLS_KEY] as List<dynamic>).add(
-          XhrPendingCall(
-            idRequest: idRequest,
-            method: method,
-            url: url,
-            headers: headers,
-            body: body,
-          ),
-        );
-      } on Error catch (e) {
-        if (_XHR_DEBUG) print('ERROR calling sendNative on Dart: >>>> $e');
-      } on Exception catch (e) {
-        if (_XHR_DEBUG) print('Exception calling sendNative on Dart: >>>> $e');
+    this.onMessageVoid('SendNative', (arguments) {
+      final method = arguments[0] as String?;
+      final url = arguments[1] as String?;
+      final headersList = arguments[2] as List<dynamic>;
+      final body = arguments[3] as String?;
+      final idRequest = arguments[4] as int?;
+      final headers = <String, String>{};
+      for (final header in headersList) {
+        headers[header[0] as String] = header[1] as String;
       }
+      (dartContext[XHR_PENDING_CALLS_KEY] as List<dynamic>).add(
+        XhrPendingCall(
+          idRequest: idRequest,
+          method: method,
+          url: url,
+          headers: headers,
+          body: body,
+        ),
+      );
     });
     return this;
   }
