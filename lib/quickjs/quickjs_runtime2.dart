@@ -200,12 +200,16 @@ class QuickJsRuntime2 extends JavascriptRuntime {
 
     if (jsIsException(jsval) != 0) {
       jsFreeValue(ctx, jsval);
-      JSError exception = _parseJSException(ctx);
+      final exception = _parseJSException(ctx);
       return JsEvalResult(exception.toString(), exception, isError: true);
     }
     final result = _jsToDart(ctx, jsval);
     jsFreeValue(ctx, jsval);
-    return JsEvalResult(result?.toString() ?? "null", result);
+    return JsEvalResult(
+      result?.toString() ?? "null",
+      result,
+      isPromise: result is Future,
+    );
   }
 
   @override
@@ -261,15 +265,23 @@ class QuickJsRuntime2 extends JavascriptRuntime {
       'sendMessage',
       (String channelName, String message) {
         final registration = channelFunctions[channelName];
-        if (registration != null) {
-          final result = registration.callback(jsonDecode(message));
-          return registration.fireAndForget ? null : result;
-        } else {
-          print('No channel $channelName registered');
+        if (registration == null) {
+          throw StateError('Unknown JavaScript channel: $channelName');
         }
-        if (JavascriptRuntime.debugEnabled) {
-          print('CHANNEL: $channelName - Message: $message');
+
+        final result = registration.callback(jsonDecode(message));
+        if (registration.fireAndForget) {
+          if (result is Future) {
+            unawaited(result.then<void>((_) {},
+                onError: (Object error, StackTrace stack) {
+              if (JavascriptRuntime.debugEnabled) {
+                print('Fire-and-forget channel failed: $error');
+              }
+            }));
+          }
+          return null;
         }
+        return result;
       }
     ]);
   }

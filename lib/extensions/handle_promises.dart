@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 
 import 'package:flutter_js/javascript_runtime.dart';
@@ -226,10 +227,11 @@ extension HandlePromises on JavascriptRuntime {
       (dynamic result) {
         cleanup();
         if (!completer.isCompleted) {
-          completer.complete(JsEvalResult('$result', value.rawResult));
+          completer.complete(JsEvalResult(jsonEncode(result), value.rawResult));
         }
       },
-      onError: (Object error, StackTrace stack) => completeError(error),
+      onError: (Object error, StackTrace stack) =>
+          completeError(StateError(error.toString())),
     );
     return completer.future;
   }

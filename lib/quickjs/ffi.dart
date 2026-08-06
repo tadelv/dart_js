@@ -113,15 +113,33 @@ abstract base class JSRuntime extends Opaque {}
 
 abstract base class JSPropertyEnum extends Opaque {}
 
-final DynamicLibrary _qjsLib = (Platform.environment['LIBQUICKJSC_PATH'] != null) ?
-      DynamicLibrary.open(Platform.environment['LIBQUICKJSC_PATH']!)
-    : (Platform.isWindows
-        ? DynamicLibrary.open('quickjs_c_bridge.dll')
-        : (Platform.isLinux
-            ? DynamicLibrary.open('libquickjs_c_bridge_plugin.so')
-            : (Platform.isAndroid
-                ? DynamicLibrary.open('libfastdev_quickjs_runtime.so')
-                : DynamicLibrary.process())));
+DynamicLibrary _openQuickJsLibrary() {
+  final configuredPath = Platform.environment['LIBQUICKJSC_PATH'];
+  if (configuredPath != null) return DynamicLibrary.open(configuredPath);
+
+  if (Platform.isWindows) {
+    final bundledPath =
+        File('windows/shared/quickjs_c_bridge.dll').absolute.path;
+    try {
+      return DynamicLibrary.open('quickjs_c_bridge.dll');
+    } on ArgumentError {
+      if (File(bundledPath).existsSync()) {
+        return DynamicLibrary.open(bundledPath);
+      }
+      rethrow;
+    }
+  }
+
+  if (Platform.isLinux) {
+    return DynamicLibrary.open('libquickjs_c_bridge_plugin.so');
+  }
+  if (Platform.isAndroid) {
+    return DynamicLibrary.open('libfastdev_quickjs_runtime.so');
+  }
+  return DynamicLibrary.process();
+}
+
+final DynamicLibrary _qjsLib = _openQuickJsLibrary();
 
 /// DLLEXPORT JSValue *jsThrow(JSContext *ctx, JSValue *obj)
 final Pointer<JSValue> Function(
