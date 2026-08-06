@@ -97,83 +97,111 @@ extension HandlePromises on JavascriptRuntime {
     }
     if (value.stringResult != '[object Promise]') return Future.value(value);
 
-    final fnRegisterPromiseFunction = evaluate(REGISTER_PROMISE_FUNCTION);
-    if (fnRegisterPromiseFunction.isError) {
-      throw StateError(fnRegisterPromiseFunction.stringResult);
-    }
-    final registerResult = callFunction(
-      fnRegisterPromiseFunction.rawResult,
-      value.rawResult,
-    );
-    if (registerResult.isError) {
-      throw StateError(registerResult.stringResult);
-    }
-    final idxPromise = int.parse(registerResult.stringResult);
-    final completer = Completer<JsEvalResult>();
     final retainedPromise =
         value.rawResult is Pointer ? value.rawResult as Pointer : null;
-    if (retainedPromise != null) retainValue(retainedPromise);
-    Timer? pollTimer;
-    Timer? timeoutTimer;
-    var completed = false;
-    late void Function() cleanup;
-
-    cleanup = () {
-      if (completed) return;
-      completed = true;
-      pollTimer?.cancel();
-      timeoutTimer?.cancel();
-      if (pollTimer != null) unregisterRuntimeTimer(pollTimer);
-      if (timeoutTimer != null) unregisterRuntimeTimer(timeoutTimer);
-      if (retainedPromise != null) releaseValue(retainedPromise);
-      unregisterDisposeCallback(cleanup);
-    };
-
-    void completeError(Object error) {
-      cleanup();
-      if (!completer.isCompleted) completer.completeError(error);
+    var retained = false;
+    if (retainedPromise != null) {
+      retainValue(retainedPromise);
+      retained = true;
     }
-
-    void completeResult(JsEvalResult result) {
-      cleanup();
-      if (!completer.isCompleted) completer.complete(result);
-    }
-
-    registerDisposeCallback(
-      () => completeError(StateError('JavaScript runtime disposed')),
-    );
-    if (timeout != null) {
-      timeoutTimer = Timer(
-        timeout,
-        () => completeError(TimeoutException('JavaScript promise timed out')),
+    var cleanupReady = false;
+    try {
+      final fnRegisterPromiseFunction = evaluate(REGISTER_PROMISE_FUNCTION);
+      if (fnRegisterPromiseFunction.isError) {
+        throw StateError(fnRegisterPromiseFunction.stringResult);
+      }
+      final registerResult = callFunction(
+        fnRegisterPromiseFunction.rawResult,
+        value.rawResult,
       );
-      registerRuntimeTimer(timeoutTimer);
-    }
-    pollTimer = Timer.periodic(Duration(milliseconds: 20), (_) {
-      if (!isRuntimeActive) {
-        completeError(StateError('JavaScript runtime disposed'));
-        return;
+      if (registerResult.isError) {
+        throw StateError(registerResult.stringResult);
       }
-      try {
-        executePendingJob();
-        if (!isPendingPromise(idxPromise)) {
-          final result = evaluate(
-            'JSON.stringify(FLUTTER_NATIVEJS_PENDING_PROMISES[$idxPromise].getValue())',
-          );
-          final isFulfilled = isFulfilledPromise(idxPromise);
-          evaluate('FLUTTER_NATIVEJS_CLEAN_PROMISE($idxPromise);');
-          if (isFulfilled) {
-            completeResult(result);
-          } else {
-            completeError(StateError(result.stringResult));
-          }
+      final idxPromise = int.parse(registerResult.stringResult);
+      final completer = Completer<JsEvalResult>();
+      Timer? pollTimer;
+      Timer? timeoutTimer;
+      var completed = false;
+      late final void Function() disposeCallback;
+      late final void Function() cleanup;
+
+      cleanup = () {
+        if (completed) return;
+        completed = true;
+        unregisterDisposeCallback(disposeCallback);
+        if (isRuntimeActive) {
+          try {
+            evaluate('FLUTTER_NATIVEJS_CLEAN_PROMISE($idxPromise);');
+          } catch (_) {}
         }
-      } catch (error) {
-        completeError(error);
+        pollTimer?.cancel();
+        timeoutTimer?.cancel();
+        if (pollTimer != null) unregisterRuntimeTimer(pollTimer);
+        if (timeoutTimer != null) unregisterRuntimeTimer(timeoutTimer);
+        if (retained) {
+          releaseValue(retainedPromise!);
+          retained = false;
+        }
+      };
+
+      void completeError(Object error) {
+        cleanup();
+        if (!completer.isCompleted) completer.completeError(error);
       }
-    });
-    registerRuntimeTimer(pollTimer);
-    return completer.future;
+
+      void completeResult(JsEvalResult result) {
+        cleanup();
+        if (!completer.isCompleted) completer.complete(result);
+      }
+
+      disposeCallback =
+          () => completeError(StateError('JavaScript runtime disposed'));
+      cleanupReady = true;
+      try {
+        registerDisposeCallback(disposeCallback);
+        if (timeout != null) {
+          timeoutTimer = Timer(
+            timeout,
+            () => completeError(
+              TimeoutException('JavaScript promise timed out'),
+            ),
+          );
+          registerRuntimeTimer(timeoutTimer);
+        }
+        pollTimer = Timer.periodic(Duration(milliseconds: 20), (_) {
+          if (!isRuntimeActive) {
+            completeError(StateError('JavaScript runtime disposed'));
+            return;
+          }
+          try {
+            executePendingJob();
+            if (!isPendingPromise(idxPromise)) {
+              final result = evaluate(
+                'JSON.stringify(FLUTTER_NATIVEJS_PENDING_PROMISES[$idxPromise].getValue())',
+              );
+              final isFulfilled = isFulfilledPromise(idxPromise);
+              if (isFulfilled) {
+                completeResult(result);
+              } else {
+                completeError(StateError(result.stringResult));
+              }
+            }
+          } catch (error) {
+            completeError(error);
+          }
+        });
+        registerRuntimeTimer(pollTimer);
+        return completer.future;
+      } catch (_) {
+        cleanup();
+        rethrow;
+      }
+    } catch (_) {
+      if (!cleanupReady && retained) {
+        releaseValue(retainedPromise!);
+      }
+      rethrow;
+    }
   }
 
   Future<JsEvalResult> _handleDartFuture(
@@ -184,16 +212,17 @@ extension HandlePromises on JavascriptRuntime {
     Timer? pollTimer;
     Timer? timeoutTimer;
     var completed = false;
-    late void Function() cleanup;
+    late final void Function() disposeCallback;
+    late final void Function() cleanup;
 
     cleanup = () {
       if (completed) return;
       completed = true;
+      unregisterDisposeCallback(disposeCallback);
       pollTimer?.cancel();
       timeoutTimer?.cancel();
       if (pollTimer != null) unregisterRuntimeTimer(pollTimer);
       if (timeoutTimer != null) unregisterRuntimeTimer(timeoutTimer);
-      unregisterDisposeCallback(cleanup);
     };
 
     void completeError(Object error) {
@@ -201,38 +230,44 @@ extension HandlePromises on JavascriptRuntime {
       if (!completer.isCompleted) completer.completeError(error);
     }
 
-    registerDisposeCallback(
-      () => completeError(StateError('JavaScript runtime disposed')),
-    );
-    if (timeout != null) {
-      timeoutTimer = Timer(
-        timeout,
-        () => completeError(TimeoutException('JavaScript promise timed out')),
-      );
-      registerRuntimeTimer(timeoutTimer);
-    }
-    pollTimer = Timer.periodic(Duration(milliseconds: 20), (_) {
-      if (!isRuntimeActive) {
-        completeError(StateError('JavaScript runtime disposed'));
-        return;
+    disposeCallback =
+        () => completeError(StateError('JavaScript runtime disposed'));
+    try {
+      registerDisposeCallback(disposeCallback);
+      if (timeout != null) {
+        timeoutTimer = Timer(
+          timeout,
+          () => completeError(TimeoutException('JavaScript promise timed out')),
+        );
+        registerRuntimeTimer(timeoutTimer);
       }
-      try {
-        executePendingJob();
-      } catch (error) {
-        completeError(error);
-      }
-    });
-    registerRuntimeTimer(pollTimer);
-    (value.rawResult as Future<dynamic>).then<void>(
-      (dynamic result) {
-        cleanup();
-        if (!completer.isCompleted) {
-          completer.complete(JsEvalResult(jsonEncode(result), value.rawResult));
+      pollTimer = Timer.periodic(Duration(milliseconds: 20), (_) {
+        if (!isRuntimeActive) {
+          completeError(StateError('JavaScript runtime disposed'));
+          return;
         }
-      },
-      onError: (Object error, StackTrace stack) =>
-          completeError(StateError(error.toString())),
-    );
-    return completer.future;
+        try {
+          executePendingJob();
+        } catch (error) {
+          completeError(error);
+        }
+      });
+      registerRuntimeTimer(pollTimer);
+      (value.rawResult as Future<dynamic>).then<void>(
+        (dynamic result) {
+          cleanup();
+          if (!completer.isCompleted) {
+            completer
+                .complete(JsEvalResult(jsonEncode(result), value.rawResult));
+          }
+        },
+        onError: (Object error, StackTrace stack) =>
+            completeError(StateError(error.toString())),
+      );
+      return completer.future;
+    } catch (_) {
+      cleanup();
+      rethrow;
+    }
   }
 }

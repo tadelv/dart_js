@@ -92,7 +92,9 @@ abstract class JavascriptRuntime {
     return this;
   }
 
-  final Map<String, dynamic> localContext = {};
+  final Map<String, dynamic> _localContext = {};
+
+  Map<String, dynamic> get localContext => _localContext;
 
   final Map<String, dynamic> dartContext = {};
 
@@ -130,6 +132,9 @@ abstract class JavascriptRuntime {
   void unregisterDisposeCallback(void Function() callback) {
     _disposeCallbacks.remove(callback);
   }
+
+  @visibleForTesting
+  int get disposeCallbackCount => _disposeCallbacks.length;
 
   void registerRuntimeTimer(Timer timer) {
     ensureRuntimeActive();

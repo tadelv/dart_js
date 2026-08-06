@@ -9,7 +9,19 @@ import 'package:flutter_js/javascript_runtime.dart';
 import 'package:flutter_js/javascriptcore/jscore_runtime.dart';
 import 'package:flutter_js/js_eval_result.dart';
 import 'package:flutter_js/quickjs/quickjs_runtime2.dart';
+import 'package:http/http.dart' as http;
 import 'package:test/test.dart';
+
+class _TestHttpClient extends http.BaseClient {
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    return http.StreamedResponse(
+      Stream<List<int>>.value(utf8.encode('{"value":42}')),
+      200,
+      reasonPhrase: 'OK',
+    );
+  }
+}
 
 void main() {
   final usesJavaScriptCore = Platform.isMacOS || Platform.isIOS;
@@ -96,11 +108,43 @@ void main() {
   );
 
   test(
+    'XHR request entries are removed before user callbacks',
+    () async {
+      final runtime = createRuntime();
+      final client = _TestHttpClient();
+      xhrSetHttpClient(client);
+      try {
+        runtime.enableXhr();
+        final pending = runtime.evaluate('''
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', 'https://example.test');
+          xhr.onload = function() { throw 'callback failed'; };
+          xhr.send();
+          Object.keys(xhrRequests).length;
+        ''');
+        expect(pending.stringResult, '1');
+
+        await Future<void>.delayed(Duration(milliseconds: 200));
+        expect(
+          runtime.evaluate('Object.keys(xhrRequests).length').stringResult,
+          '0',
+        );
+      } finally {
+        runtime.dispose();
+        xhrSetHttpClient(null);
+        client.close();
+      }
+    },
+    skip: skipReason,
+  );
+
+  test(
     'JavaScript bridge deferred requests resolve, reject, and time out',
     () async {
       final runtime = createRuntime();
       try {
         runtime.enableHandlePromises();
+        final initialDisposeCallbackCount = runtime.disposeCallbackCount;
         runtime.onMessage(
           'resolve',
           (dynamic args) => Future<dynamic>.delayed(
@@ -129,7 +173,16 @@ void main() {
         expect(jsonDecode(resolved.stringResult), {'value': 42});
         if (runtime is JavascriptCoreRuntime) {
           expect(runtime.pendingRequestCount, 0);
+          expect(
+            runtime
+                .evaluate(
+                  'Object.keys(FLUTTER_NATIVEJS_PENDING_PROMISES).length',
+                )
+                .stringResult,
+            '0',
+          );
         }
+        expect(runtime.disposeCallbackCount, initialDisposeCallbackCount);
 
         final rejectedPromise = runtime.evaluate(
           'sendMessage("reject", "{}")',
@@ -140,18 +193,40 @@ void main() {
         );
         if (runtime is JavascriptCoreRuntime) {
           expect(runtime.pendingRequestCount, 0);
+          expect(
+            runtime
+                .evaluate(
+                  'Object.keys(FLUTTER_NATIVEJS_PENDING_PROMISES).length',
+                )
+                .stringResult,
+            '0',
+          );
         }
+        expect(runtime.disposeCallbackCount, initialDisposeCallbackCount);
 
         final timeoutPromise = runtime.evaluate(
           'sendMessage("timeout", "{}")',
         );
+        final timeoutResult = runtime.handlePromise(timeoutPromise,
+            timeout: Duration(seconds: 1));
         await expectLater(
-          runtime.handlePromise(timeoutPromise, timeout: Duration(seconds: 1)),
-          throwsA(isA<TimeoutException>()),
+          timeoutResult,
+          throwsA(
+            usesJavaScriptCore ? isA<StateError>() : isA<TimeoutException>(),
+          ),
         );
         if (runtime is JavascriptCoreRuntime) {
           expect(runtime.pendingRequestCount, 0);
+          expect(
+            runtime
+                .evaluate(
+                  'Object.keys(FLUTTER_NATIVEJS_PENDING_PROMISES).length',
+                )
+                .stringResult,
+            '0',
+          );
         }
+        expect(runtime.disposeCallbackCount, initialDisposeCallbackCount);
       } finally {
         runtime.dispose();
       }
@@ -203,11 +278,19 @@ void main() {
         expect(runtime.localContext['value'], same(first));
         if (runtime is JavascriptCoreRuntime) {
           expect(runtime.protectedValueCount, initialCount! + 1);
+          expect(
+            () => runtime.localContext['bypass'] = first,
+            throwsA(isA<UnsupportedError>()),
+          );
         }
         runtime.setLocalContextValue('value', second);
         expect(runtime.localContext['value'], same(second));
         if (runtime is JavascriptCoreRuntime) {
           expect(runtime.protectedValueCount, initialCount! + 1);
+          expect(
+            () => runtime.localContext.remove('value'),
+            throwsA(isA<UnsupportedError>()),
+          );
         }
         runtime.removeLocalContextValue('value');
         expect(runtime.localContext.containsKey('value'), isFalse);
