@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
@@ -19,6 +20,9 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
   JSContext context = JSContext(nullptr);
   Pointer _globalObject = nullptr;
   late final String _engineInstanceId;
+  final Map<String, dynamic> _localContext = {};
+  late final Map<String, dynamic> _localContextView =
+      UnmodifiableMapView(_localContext);
   final Map<int, _ProtectedValue> _protectedValues = {};
   final Map<int, _PendingRequest> _pendingRequests = {};
   int _nextRequestId = 0;
@@ -356,13 +360,16 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
   }
 
   @override
+  Map<String, dynamic> get localContext => _localContextView;
+
+  @override
   void setLocalContextValue(String key, dynamic value) {
     ensureRuntimeActive();
-    final previous = localContext[key];
+    final previous = _localContext[key];
     if (value is Pointer && value != nullptr) {
       _retainValue(value);
     }
-    localContext[key] = value;
+    _localContext[key] = value;
     if (previous is Pointer && previous != nullptr) {
       _releaseValue(previous);
     }
@@ -371,7 +378,7 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
   @override
   void removeLocalContextValue(String key) {
     ensureRuntimeActive();
-    final previous = localContext.remove(key);
+    final previous = _localContext.remove(key);
     if (previous is Pointer && previous != nullptr) {
       _releaseValue(previous);
     }
@@ -379,8 +386,8 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
 
   @override
   void clearLocalContext() {
-    final values = List<dynamic>.of(localContext.values);
-    localContext.clear();
+    final values = List<dynamic>.of(_localContext.values);
+    _localContext.clear();
     for (final value in values) {
       if (value is Pointer && value != nullptr) {
         _releaseValue(value);

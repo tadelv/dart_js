@@ -241,7 +241,7 @@ const XHR_PENDING_CALLS_KEY = "xhrPendingCalls";
 
 http.Client? httpClient;
 
-xhrSetHttpClient(http.Client client) {
+void xhrSetHttpClient(http.Client? client) {
   httpClient = client;
 }
 
@@ -336,14 +336,37 @@ extension JavascriptRuntimeXhrExtension on JavascriptRuntime {
           ),
         );
         final responseInfo = jsonEncode(xhrResult.responseInfo);
-        final callback =
-            'globalThis.xhrRequests[${pendingCall.idRequest}].callback('
-            '${jsonEncode(jsonDecode(responseInfo))},'
-            '${jsonEncode(responseText)},${jsonEncode(xhrResult.error)});';
+        final callback = '''
+(function () {
+  const request = globalThis.xhrRequests[${pendingCall.idRequest}];
+  delete globalThis.xhrRequests[${pendingCall.idRequest}];
+  if (request) {
+    request.callback(
+      ${jsonEncode(jsonDecode(responseInfo))},
+      ${jsonEncode(responseText)},
+      ${jsonEncode(xhrResult.error)}
+    );
+  }
+})();''';
         evaluate(callback);
       } on Object catch (error) {
-        if (isRuntimeActive && _XHR_DEBUG) {
-          print('XHR request failed: $error');
+        if (isRuntimeActive) {
+          final callback = '''
+(function () {
+  const request = globalThis.xhrRequests[${pendingCall.idRequest}];
+  delete globalThis.xhrRequests[${pendingCall.idRequest}];
+  if (request) {
+    request.callback(
+      {statusCode: 0, statusText: "", responseHeaders: []},
+      null,
+      ${jsonEncode(error.toString())}
+    );
+  }
+})();''';
+          evaluate(callback);
+          if (_XHR_DEBUG) {
+            print('XHR request failed: $error');
+          }
         }
       }
     }
