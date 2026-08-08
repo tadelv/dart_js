@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_js/extensions/fetch.dart';
 import 'package:flutter_js/extensions/xhr.dart';
@@ -12,7 +11,6 @@ void main() {
 
   // Need setup environment variable LIBQUICKJSC_PATH = './windows/shared/quickjs_c_bridge.dll'
   setUp(() {
-    print(Platform.environment);
     jsRuntime = getJavascriptRuntime();
   });
 
@@ -23,7 +21,6 @@ void main() {
   });
 
   test('evaluate javascript', () {
-    print(Platform.environment);
     final result = jsRuntime.evaluate('Math.pow(5,3)');
     print('${result.rawResult}, ${result.stringResult}');
     print(
