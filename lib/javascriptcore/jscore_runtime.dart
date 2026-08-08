@@ -772,12 +772,12 @@ class JavascriptCoreRuntime extends JavascriptRuntime {
   }
 
   @override
-  JsEvalResult callFunction(Pointer<NativeType>? fn, Pointer<NativeType>? obj) {
+  JsEvalResult callFunction(dynamic fn, dynamic obj) {
     ensureRuntimeActive();
-    if (fn == null || fn == nullptr) {
+    if (fn is! Pointer<NativeType> || fn == nullptr) {
       return _nativeError('ERROR: Cannot call a null JavaScript function');
     }
-    if (obj == null || obj == nullptr) {
+    if (obj is! Pointer<NativeType> || obj == nullptr) {
       return _nativeError(
           'ERROR: Cannot call a JavaScript function with a null argument');
     }

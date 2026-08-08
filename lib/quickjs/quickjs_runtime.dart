@@ -140,9 +140,12 @@ class QuickJsRuntime extends JavascriptRuntime {
   // END NATIVE BRIDGE DECLARATIONS
 
   JsEvalResult callFunction(
-    Pointer function,
-    Pointer argument,
+    dynamic function,
+    dynamic argument,
   ) {
+    if (function is! Pointer || argument is! Pointer) {
+      throw ArgumentError('Expected JavaScript pointers');
+    }
     Pointer result = calloc<JSValueConst>();
     Pointer<Pointer<Utf8NullTerminated>> stringResult =
         calloc<Pointer<Utf8NullTerminated>>();
