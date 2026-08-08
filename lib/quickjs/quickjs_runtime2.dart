@@ -165,6 +165,7 @@ class QuickJsRuntime2 extends JavascriptRuntime {
     final rt = _rt;
     final ctx = _ctx;
     if (rt == null || ctx == null) return;
+    jsResetRuntimeTimeout(rt);
     while (true) {
       int err = jsExecutePendingJob(rt);
       if (err <= 0) {

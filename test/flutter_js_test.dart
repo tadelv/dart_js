@@ -72,6 +72,29 @@ void main() {
     }
   });
 
+  test('QuickJS interrupts infinite microtask drains after its timeout', () {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final runtime = QuickJsRuntime2(
+      timeout: 20,
+      hostPromiseRejectionHandler: (_) {},
+    );
+
+    try {
+      runtime.evaluate('''
+        Promise.resolve().then(function loop() {
+          Promise.resolve().then(loop);
+        });
+      ''');
+      final stopwatch = Stopwatch()..start();
+
+      runtime.executePendingJob();
+
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
+    } finally {
+      runtime.dispose();
+    }
+  });
+
   test('xhr option installs fetch synchronously', () {
     final runtime = getJavascriptRuntime(xhr: true);
 

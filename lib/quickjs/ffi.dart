@@ -980,6 +980,16 @@ final Pointer<JSValue> Function(
             )>>('jsGetException')
     .asFunction();
 
+final void Function(
+  Pointer<JSRuntime> rt,
+) jsResetRuntimeTimeout = _qjsLib
+    .lookup<
+        NativeFunction<
+            Void Function(
+              Pointer<JSRuntime>,
+            )>>('jsResetRuntimeTimeout')
+    .asFunction();
+
 /// int jsExecutePendingJob(JSRuntime *rt)
 final int Function(
   Pointer<JSRuntime> ctx,
