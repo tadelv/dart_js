@@ -23,6 +23,10 @@ typedef _JsModuleHandler = String Function(String name);
 /// Handler to manage unhandled promise rejection.
 typedef _JsHostPromiseRejectionHandler = void Function(dynamic reason);
 
+final _quickJsResultFinalizer =
+    Finalizer<_JSObject>((nativeResult) => nativeResult.destroy());
+final _quickJsNativeResults = Expando<_JSObject>();
+
 /// Quickjs engine for flutter.
 class QuickJsRuntime2 extends JavascriptRuntime {
   Pointer<JSRuntime>? _rt;
@@ -182,6 +186,34 @@ class QuickJsRuntime2 extends JavascriptRuntime {
     //}
   }
 
+  JsEvalResult _consumeResult(
+    Pointer<JSContext> ctx,
+    Pointer<JSValue> jsValue,
+  ) {
+    if (jsIsException(jsValue) != 0) {
+      jsFreeValue(ctx, jsValue);
+      final exception = _parseJSException(ctx);
+      return JsEvalResult(exception.toString(), exception, isError: true);
+    }
+    final nativeResult = _JSObject(ctx, jsValue);
+    try {
+      final result = _jsToDart(ctx, jsValue);
+      final evalResult = JsEvalResult(
+        result?.toString() ?? 'null',
+        result,
+        isPromise: result is Future,
+      );
+      _quickJsNativeResults[evalResult] = nativeResult;
+      _quickJsResultFinalizer.attach(evalResult, nativeResult);
+      return evalResult;
+    } catch (_) {
+      nativeResult.destroy();
+      rethrow;
+    } finally {
+      jsFreeValue(ctx, jsValue);
+    }
+  }
+
   @override
   void setInspectable(bool inspectable) {
     // Nothing to do.
@@ -204,18 +236,7 @@ class QuickJsRuntime2 extends JavascriptRuntime {
       evalFlags ?? JSEvalFlag.GLOBAL,
     );
 
-    if (jsIsException(jsval) != 0) {
-      jsFreeValue(ctx, jsval);
-      final exception = _parseJSException(ctx);
-      return JsEvalResult(exception.toString(), exception, isError: true);
-    }
-    final result = _jsToDart(ctx, jsval);
-    jsFreeValue(ctx, jsval);
-    return JsEvalResult(
-      result?.toString() ?? "null",
-      result,
-      isPromise: result is Future,
-    );
+    return _consumeResult(ctx, jsval);
   }
 
   @override
@@ -225,6 +246,10 @@ class QuickJsRuntime2 extends JavascriptRuntime {
       throw ArgumentError.value(fn, 'fn', 'Expected a JavaScript function');
     }
     try {
+      if (fn is _JSFunction) {
+        final result = fn._invoke([obj]);
+        return _consumeResult(fn._ctx!, result);
+      }
       final result = fn.invoke([obj]);
       return JsEvalResult(
         result?.toString() ?? 'null',
@@ -309,6 +334,24 @@ class QuickJsRuntime2 extends JavascriptRuntime {
   @override
   String jsonStringify(JsEvalResult jsValue) {
     ensureRuntimeActive();
-    return jsonEncode(jsValue.rawResult);
+    final ctx = _ctx!;
+    final nativeResult = _quickJsNativeResults[jsValue];
+    if (nativeResult == null ||
+        nativeResult._ctx != ctx ||
+        nativeResult._val == null) {
+      throw StateError('JavaScript result is not an active native value');
+    }
+    final serialized = jsJSONStringify(ctx, nativeResult._val!);
+    try {
+      if (jsIsException(serialized) != 0) {
+        throw StateError(_parseJSException(ctx).toString());
+      }
+      if (jsValueGetTag(serialized) == JSTag.UNDEFINED) {
+        throw StateError('JavaScript JSON serialization returned undefined');
+      }
+      return jsToCString(ctx, serialized);
+    } finally {
+      jsFreeValue(ctx, serialized);
+    }
   }
 }
