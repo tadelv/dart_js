@@ -108,7 +108,7 @@ void _runJsIsolate(Map spawnMessage) async {
   ReceivePort port = ReceivePort();
   sendPort.send(port.sendPort);
   final qjs = QuickJsRuntime2(
-    stackSize: spawnMessage[#stackSize],
+    stackSize: spawnMessage[#stackSize] ?? 1024 * 1024,
     hostPromiseRejectionHandler: (reason) {
       sendPort.send({
         #type: #hostPromiseRejection,
@@ -165,8 +165,20 @@ void _runJsIsolate(Map spawnMessage) async {
 
 typedef _JsAsyncModuleHandler = Future<String> Function(String name);
 
+class _IsolateSession {
+  final ready = Completer<SendPort>();
+  final failure = Completer<void>();
+  final closedError = StateError('QuickJS isolate closed');
+  bool closing = false;
+
+  _IsolateSession() {
+    ready.future.ignore();
+    failure.future.ignore();
+  }
+}
+
 class IsolateQjs {
-  Future<SendPort>? _sendPort;
+  _IsolateSession? _session;
 
   /// Max stack size for quickjs.
   final int? stackSize;
@@ -188,22 +200,39 @@ class IsolateQjs {
   });
 
   _ensureEngine() {
-    if (_sendPort != null) return;
-    ReceivePort port = ReceivePort();
-    Isolate.spawn(
-      _runJsIsolate,
-      {
-        #port: port.sendPort,
-        #stackSize: stackSize,
-      },
-      errorsAreFatal: true,
-    );
-    final completer = Completer<SendPort>();
+    if (_session != null) return;
+    final session = _IsolateSession();
+    final port = ReceivePort();
+    final errorPort = ReceivePort();
+    final exitPort = ReceivePort();
+    var portsClosed = false;
+    _session = session;
+
+    void closePorts() {
+      if (portsClosed) return;
+      portsClosed = true;
+      port.close();
+      errorPort.close();
+      exitPort.close();
+    }
+
+    void fail(Object error, [StackTrace? stack]) {
+      if (!session.ready.isCompleted) {
+        session.ready.completeError(error, stack ?? StackTrace.current);
+      }
+      if (!session.failure.isCompleted) {
+        session.failure.completeError(error, stack ?? StackTrace.current);
+      }
+      if (identical(_session, session)) _session = null;
+      closePorts();
+    }
+
     port.listen((msg) async {
-      if (msg is SendPort && !completer.isCompleted) {
-        completer.complete(msg);
+      if (msg is SendPort && !session.ready.isCompleted) {
+        session.ready.complete(msg);
         return;
       }
+      if (msg is! Map) return;
       switch (msg[#type]) {
         case #hostPromiseRejection:
           try {
@@ -226,27 +255,71 @@ class IsolateQjs {
           }
           break;
       }
-    }, onDone: () {
-      close();
-      if (!completer.isCompleted)
-        completer.completeError(JSError('isolate close'));
     });
-    _sendPort = completer.future;
+    errorPort.listen((message) {
+      if (message is List && message.isNotEmpty) {
+        fail(JSError(message.first, message.length > 1 ? message[1] : null));
+      } else {
+        fail(JSError(message));
+      }
+    });
+    exitPort.listen((_) {
+      fail(session.closing ? session.closedError : JSError('isolate exited'));
+    });
+
+    Future<void> spawn() async {
+      try {
+        await Isolate.spawn(
+          _runJsIsolate,
+          {
+            #port: port.sendPort,
+            #stackSize: stackSize,
+          },
+          errorsAreFatal: true,
+          onError: errorPort.sendPort,
+          onExit: exitPort.sendPort,
+        );
+      } catch (error, stack) {
+        fail(JSError(error, stack), stack);
+      }
+    }
+
+    unawaited(spawn());
+  }
+
+  Future<dynamic> _waitForResponse(
+    _IsolateSession session,
+    ReceivePort responsePort,
+  ) async {
+    try {
+      return await Future.any<dynamic>([
+        responsePort.first,
+        session.failure.future,
+      ]);
+    } finally {
+      responsePort.close();
+    }
   }
 
   /// Free Runtime and close isolate thread that can be recreate when evaluate again.
   close() {
-    final sendPort = _sendPort;
-    _sendPort = null;
-    if (sendPort == null) return;
-    final ret = sendPort.then((sendPort) async {
+    final session = _session;
+    _session = null;
+    if (session == null) return;
+    session.closing = true;
+    final ret = session.ready.future.then((sendPort) async {
       final closePort = ReceivePort();
       sendPort.send({
         #type: #close,
         #port: closePort.sendPort,
       });
-      final result = await closePort.first;
-      closePort.close();
+      late final dynamic result;
+      try {
+        result = await _waitForResponse(session, closePort);
+      } catch (error) {
+        if (identical(error, session.closedError)) return true;
+        rethrow;
+      }
       if (result is Map && result.containsKey(#error))
         throw _decodeData(result[#error]);
       return _decodeData(result);
@@ -261,8 +334,9 @@ class IsolateQjs {
     int? evalFlags,
   }) async {
     _ensureEngine();
+    final session = _session!;
+    final sendPort = await session.ready.future;
     final evaluatePort = ReceivePort();
-    final sendPort = await _sendPort!;
     sendPort.send({
       #type: #evaluate,
       #command: command,
@@ -270,8 +344,7 @@ class IsolateQjs {
       #flag: evalFlags,
       #port: evaluatePort.sendPort,
     });
-    final result = await evaluatePort.first;
-    evaluatePort.close();
+    final result = await _waitForResponse(session, evaluatePort);
     if (result is Map && result.containsKey(#error))
       throw _decodeData(result[#error]);
     return _decodeData(result);

@@ -97,6 +97,28 @@ void main() {
     expect(jsRuntime.jsonStringify(object), equals('{"answer":42}'));
   });
 
+  test('IsolateQjs closes and restarts its worker', () async {
+    final runtime = IsolateQjs();
+
+    final first = await runtime
+        .evaluate('21 * 2')
+        .timeout(const Duration(seconds: 2)) as JsEvalResult;
+    expect(first.rawResult, equals(42));
+    expect(
+      await runtime.close().timeout(const Duration(seconds: 2)),
+      isTrue,
+    );
+
+    final second = await runtime
+        .evaluate('6 * 7')
+        .timeout(const Duration(seconds: 2)) as JsEvalResult;
+    expect(second.rawResult, equals(42));
+    expect(
+      await runtime.close().timeout(const Duration(seconds: 2)),
+      isTrue,
+    );
+  });
+
   test('leak test', () async {
     final jsRt = getJavascriptRuntime();
     jsRt.evaluate('''
