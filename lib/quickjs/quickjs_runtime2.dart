@@ -137,10 +137,10 @@ class QuickJsRuntime2 extends JavascriptRuntime {
   close() {
     final rt = _rt;
     final ctx = _ctx;
-    _rt = null;
-    _ctx = null;
-    if (ctx != null) jsFreeContext(ctx);
     if (rt == null) {
+      _rt = null;
+      _ctx = null;
+      if (ctx != null) jsFreeContext(ctx);
       localContext.clear();
       return;
     }
@@ -150,9 +150,15 @@ class QuickJsRuntime2 extends JavascriptRuntime {
         JSRef.freeRecursive(obj);
       }
       localContext.clear();
+      jsReleaseRuntimeRefs(rt);
+      if (ctx != null) jsFreeContext(ctx);
       jsFreeRuntime(rt);
     } on String catch (e) {
       throw JSError(e);
+    } finally {
+      _rt = null;
+      _ctx = null;
+      localContext.clear();
     }
   }
 

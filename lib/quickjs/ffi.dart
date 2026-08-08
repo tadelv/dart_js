@@ -263,7 +263,11 @@ final void Function(
 void jsFreeRuntime(
   Pointer<JSRuntime> rt,
 ) {
-  final referenceleak = <String>[];
+  jsReleaseRuntimeRefs(rt);
+  _jsFreeRuntime(rt);
+}
+
+void jsReleaseRuntimeRefs(Pointer<JSRuntime> rt) {
   final opaque = runtimeOpaques[rt];
   if (opaque != null) {
     while (opaque._ref.isNotEmpty) {
@@ -271,19 +275,6 @@ void jsFreeRuntime(
       ref.destroy();
       runtimeOpaques[rt]?._ref.remove(ref);
     }
-    while (opaque._ref.isNotEmpty) {
-      final ref = opaque._ref.first;
-      final objStrs = ref.toString().split('\n');
-      final objStr = objStrs.length > 0 ? objStrs[0] + " ..." : objStrs[0];
-      referenceleak.add(
-          "  ${identityHashCode(ref)}\t${ref._refCount + 1}\t${ref.runtimeType.toString()}\t$objStr");
-      ref.destroy();
-    }
-  }
-  _jsFreeRuntime(rt);
-  if (referenceleak.length > 0) {
-    throw ('reference leak:\n    ADDR\tREF\tTYPE\tPROP\n' +
-        referenceleak.join('\n'));
   }
 }
 
