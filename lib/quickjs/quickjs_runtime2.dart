@@ -31,7 +31,6 @@ class QuickJsRuntime2 extends JavascriptRuntime {
   /// Max stack size for quickjs.
   int stackSize;
 
-  /// Max stack size for quickjs.
   final int? timeout;
 
   /// Max memory for quickjs.

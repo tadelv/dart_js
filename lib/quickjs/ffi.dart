@@ -169,7 +169,7 @@ typedef _JSChannel = Pointer<JSValue> Function(
 typedef _JSChannelNative = Pointer<JSValue> Function(
     Pointer<JSContext> ctx, IntPtr method, Pointer<JSValue> argv);
 
-/// JSRuntime *jsNewRuntime(JSChannel channel)
+/// JSRuntime *jsNewRuntime(JSChannel channel, int64_t timeout)
 final Pointer<JSRuntime> Function(
   Pointer<NativeFunction<_JSChannelNative>>,
   int,
