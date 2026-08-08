@@ -56,6 +56,20 @@ void main() {
     }
   });
 
+  test('xhr option installs fetch synchronously', () {
+    final runtime = getJavascriptRuntime(xhr: true);
+
+    try {
+      expect(runtime.evaluate('typeof fetch').stringResult, equals('function'));
+      expect(
+        runtime.evaluate('typeof XMLHttpRequest').stringResult,
+        equals('function'),
+      );
+    } finally {
+      runtime.dispose();
+    }
+  });
+
   test('leak test', () async {
     final jsRt = getJavascriptRuntime();
     jsRt.evaluate('''

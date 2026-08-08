@@ -34,6 +34,3 @@ flutter:
       #   default_package: flutter_js_linux_windows
       windows:
         pluginClass: FlutterJsPlugin
-
-  assets:
-    - assets/js/
