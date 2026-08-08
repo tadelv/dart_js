@@ -1,4 +1,5 @@
 #include "quickjs/quickjs.h"
+#include <chrono>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -322,6 +323,26 @@ extern "C"
 
     typedef void *JSChannel(JSContext *ctx, size_t type, void *argv);
 
+    struct RuntimeOpaque
+    {
+        JSChannel *channel;
+        int64_t timeout;
+        std::chrono::steady_clock::time_point deadline;
+    };
+
+    int interruptRuntime(JSRuntime *rt, void *data)
+    {
+        RuntimeOpaque *opaque = static_cast<RuntimeOpaque *>(data);
+        return opaque->timeout > 0 && std::chrono::steady_clock::now() >= opaque->deadline;
+    }
+
+    void resetRuntimeTimeout(JSRuntime *rt)
+    {
+        RuntimeOpaque *opaque = static_cast<RuntimeOpaque *>(JS_GetRuntimeOpaque(rt));
+        if (opaque != nullptr && opaque->timeout > 0)
+            opaque->deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(opaque->timeout);
+    }
+
     DLLEXPORT JSValue *jsThrow(JSContext *ctx, JSValue *obj)
     {
         return new JSValue(JS_Throw(ctx, JS_DupValue(ctx, *obj)));
@@ -347,8 +368,8 @@ extern "C"
         const char *module_name, void *opaque)
     {
         JSRuntime *rt = JS_GetRuntime(ctx);
-        JSChannel *channel = (JSChannel *)JS_GetRuntimeOpaque(rt);
-        const char *str = (char *)channel(ctx, JSChannelType_MODULE, (void *)module_name);
+        RuntimeOpaque *runtimeOpaque = static_cast<RuntimeOpaque *>(JS_GetRuntimeOpaque(rt));
+        const char *str = (char *)runtimeOpaque->channel(ctx, JSChannelType_MODULE, (void *)module_name);
         if (str == 0)
             return NULL;
         JSValue func_val = JS_Eval(ctx, str, strlen(str), module_name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
@@ -363,13 +384,13 @@ extern "C"
     JSValue js_channel(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic, JSValue *func_data)
     {
         JSRuntime *rt = JS_GetRuntime(ctx);
-        JSChannel *channel = (JSChannel *)JS_GetRuntimeOpaque(rt);
+        RuntimeOpaque *opaque = static_cast<RuntimeOpaque *>(JS_GetRuntimeOpaque(rt));
         void *data[4];
         data[0] = &this_val;
         data[1] = &argc;
         data[2] = argv;
         data[3] = func_data;
-        return *(JSValue *)channel(ctx, JSChannelType_METHON, data);
+        return *(JSValue *)opaque->channel(ctx, JSChannelType_METHON, data);
     }
 
     void js_promise_rejection_tracker(JSContext *ctx, JSValueConst promise,
@@ -379,14 +400,20 @@ extern "C"
         if (is_handled)
             return;
         JSRuntime *rt = JS_GetRuntime(ctx);
-        JSChannel *channel = (JSChannel *)JS_GetRuntimeOpaque(rt);
-        channel(ctx, JSChannelType_PROMISE_TRACK, &reason);
+        RuntimeOpaque *runtimeOpaque = static_cast<RuntimeOpaque *>(JS_GetRuntimeOpaque(rt));
+        runtimeOpaque->channel(ctx, JSChannelType_PROMISE_TRACK, &reason);
     }
 
-    DLLEXPORT JSRuntime *jsNewRuntime(JSChannel channel)
+    DLLEXPORT JSRuntime *jsNewRuntime(JSChannel channel, int64_t timeout)
     {
         JSRuntime *rt = JS_NewRuntime();
-        JS_SetRuntimeOpaque(rt, (void *)channel);
+        RuntimeOpaque *opaque = new RuntimeOpaque{channel, timeout, {}};
+        JS_SetRuntimeOpaque(rt, opaque);
+        if (timeout > 0)
+        {
+            resetRuntimeTimeout(rt);
+            JS_SetInterruptHandler(rt, interruptRuntime, opaque);
+        }
         JS_SetHostPromiseRejectionTracker(rt, js_promise_rejection_tracker, nullptr);
         JS_SetModuleLoaderFunc(rt, nullptr, js_module_loader, nullptr);
         return rt;
@@ -405,10 +432,10 @@ extern "C"
                 [](JSRuntime *rt, JSValue obj) noexcept {
                     JSClassID classid = JS_GetClassID(obj);
                     void *opaque = JS_GetOpaque(obj, classid);
-                    JSChannel *channel = (JSChannel *)JS_GetRuntimeOpaque(rt);
-                    if (channel == nullptr)
+                    RuntimeOpaque *runtimeOpaque = static_cast<RuntimeOpaque *>(JS_GetRuntimeOpaque(rt));
+                    if (runtimeOpaque == nullptr)
                         return;
-                    channel((JSContext *)rt, JSChannelType_FREE_OBJECT, opaque);
+                    runtimeOpaque->channel((JSContext *)rt, JSChannelType_FREE_OBJECT, opaque);
                 }};
             int e = JS_NewClass(rt, QJSClassId, &def);
             if (e < 0)
@@ -440,7 +467,10 @@ extern "C"
 
     DLLEXPORT void jsFreeRuntime(JSRuntime *rt)
     {
+        RuntimeOpaque *opaque = static_cast<RuntimeOpaque *>(JS_GetRuntimeOpaque(rt));
         JS_SetRuntimeOpaque(rt, nullptr);
+        JS_SetInterruptHandler(rt, nullptr, nullptr);
+        delete opaque;
         JS_FreeRuntime(rt);
     }
 
@@ -469,6 +499,7 @@ extern "C"
     {
         JSRuntime *rt = JS_GetRuntime(ctx);
         JS_UpdateStackTop(rt);
+        resetRuntimeTimeout(rt);
         JSValue *ret = new JSValue(JS_Eval(ctx, input, input_len, filename, eval_flags));
         return ret;
     }
@@ -657,6 +688,7 @@ extern "C"
     {
         JSRuntime *rt = JS_GetRuntime(ctx);
         JS_UpdateStackTop(rt);
+        resetRuntimeTimeout(rt);
         JSValue *ret = new JSValue(JS_Call(ctx, *func_obj, *this_obj, argc, argv));
         return ret;
     }
@@ -674,6 +706,7 @@ extern "C"
     DLLEXPORT int32_t jsExecutePendingJob(JSRuntime *rt)
     {
         JS_UpdateStackTop(rt);
+        resetRuntimeTimeout(rt);
         JSContext *ctx;
         int ret = JS_ExecutePendingJob(rt, &ctx);
         return ret;

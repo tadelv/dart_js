@@ -41,6 +41,21 @@ void main() {
     expect(jsRuntime.evaluate('21 * 2').rawResult, equals(42));
   });
 
+  test('QuickJS interrupts execution after its timeout', () {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final runtime = QuickJsRuntime2(timeout: 20);
+
+    try {
+      final stopwatch = Stopwatch()..start();
+      final result = runtime.evaluate('while (true) {}');
+
+      expect(result.isError, isTrue);
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
+    } finally {
+      runtime.dispose();
+    }
+  });
+
   test('leak test', () async {
     final jsRt = getJavascriptRuntime();
     jsRt.evaluate('''
