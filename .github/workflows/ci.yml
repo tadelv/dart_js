@@ -25,7 +25,7 @@ jobs:
       - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
         with:
           sdk: stable
-      - run: dart pub get
+      - run: dart pub get --no-example
       - run: dart analyze
       - run: dart test --concurrency=1
 
@@ -41,8 +41,11 @@ jobs:
         with:
           channel: stable
           cache: true
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with:
+          gradle-version: 8.10.2
       - run: flutter pub get
       - run: flutter pub get
         working-directory: example
-      - run: ./gradlew :flutter_js:assembleDebug --no-daemon
+      - run: gradle :flutter_js:assembleDebug --no-daemon
         working-directory: example/android
