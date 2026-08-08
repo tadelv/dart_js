@@ -30,6 +30,17 @@ void main() {
     expect(result.stringResult, equals('125'));
   });
 
+  test('QuickJS releases retained values before closing its context', () {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final result = jsRuntime.evaluate('({ answer: 42 })');
+    jsRuntime.setLocalContextValue('retained', result.rawResult);
+
+    (jsRuntime as QuickJsRuntime2).close();
+
+    expect(jsRuntime.localContext, isEmpty);
+    expect(jsRuntime.evaluate('21 * 2').rawResult, equals(42));
+  });
+
   test('leak test', () async {
     final jsRt = getJavascriptRuntime();
     jsRt.evaluate('''
