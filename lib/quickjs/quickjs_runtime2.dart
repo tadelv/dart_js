@@ -231,7 +231,7 @@ class QuickJsRuntime2 extends JavascriptRuntime {
         result,
         isPromise: result is Future,
       );
-    } on JSError catch (error) {
+    } catch (error) {
       return JsEvalResult(error.toString(), error, isError: true);
     }
   }
