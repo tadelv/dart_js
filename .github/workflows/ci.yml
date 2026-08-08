@@ -41,7 +41,7 @@ jobs:
         with:
           channel: stable
           cache: true
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c
         with:
           gradle-version: 8.10.2
       - run: flutter pub get
