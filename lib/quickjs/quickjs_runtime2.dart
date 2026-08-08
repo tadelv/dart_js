@@ -218,13 +218,27 @@ class QuickJsRuntime2 extends JavascriptRuntime {
   }
 
   @override
-  JsEvalResult callFunction(Pointer<NativeType> fn, Pointer<NativeType> obj) {
-    throw UnimplementedError();
+  JsEvalResult callFunction(dynamic fn, dynamic obj) {
+    ensureRuntimeActive();
+    if (fn is! JSInvokable) {
+      throw ArgumentError.value(fn, 'fn', 'Expected a JavaScript function');
+    }
+    try {
+      final result = fn.invoke([obj]);
+      return JsEvalResult(
+        result?.toString() ?? 'null',
+        result,
+        isPromise: result is Future,
+      );
+    } on JSError catch (error) {
+      return JsEvalResult(error.toString(), error, isError: true);
+    }
   }
 
   @override
   T? convertValue<T>(JsEvalResult jsValue) {
-    return true as T;
+    ensureRuntimeActive();
+    return jsValue.rawResult as T?;
   }
 
   @override
@@ -294,6 +308,6 @@ class QuickJsRuntime2 extends JavascriptRuntime {
   @override
   String jsonStringify(JsEvalResult jsValue) {
     ensureRuntimeActive();
-    throw UnimplementedError();
+    return jsonEncode(jsValue.rawResult);
   }
 }

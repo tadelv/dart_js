@@ -23,7 +23,7 @@ enum JavascriptRuntimeLifecycle { active, disposing, disposed }
 
 class FlutterJsPlatformEmpty extends JavascriptRuntime {
   @override
-  JsEvalResult callFunction(Pointer<NativeType> fn, Pointer<NativeType> obj) {
+  JsEvalResult callFunction(dynamic fn, dynamic obj) {
     throw UnimplementedError();
   }
 
@@ -195,7 +195,7 @@ abstract class JavascriptRuntime {
 
   Future<JsEvalResult> evaluateAsync(String code, {String? sourceUrl});
 
-  JsEvalResult callFunction(Pointer fn, Pointer obj);
+  JsEvalResult callFunction(dynamic fn, dynamic obj);
 
   T? convertValue<T>(JsEvalResult jsValue);
 

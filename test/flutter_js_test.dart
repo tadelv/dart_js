@@ -83,6 +83,20 @@ void main() {
     );
   });
 
+  test('QuickJS implements the runtime value contract', () {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final function = jsRuntime.evaluate('(value) => value * 2');
+    final value = jsRuntime.evaluate('21');
+    final object = jsRuntime.evaluate('({ answer: 42 })');
+
+    expect(
+      jsRuntime.callFunction(function.rawResult, value.rawResult).rawResult,
+      equals(42),
+    );
+    expect(jsRuntime.convertValue<int>(value), equals(21));
+    expect(jsRuntime.jsonStringify(object), equals('{"answer":42}'));
+  });
+
   test('leak test', () async {
     final jsRt = getJavascriptRuntime();
     jsRt.evaluate('''
