@@ -135,6 +135,17 @@ void main() {
     expect(jsRuntime.jsonStringify(object), equals('{"answer":42}'));
   });
 
+  test('QuickJS normalizes primitive function exceptions', () {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final function = jsRuntime.evaluate('() => { throw "boom"; }');
+
+    final result = jsRuntime.callFunction(function.rawResult, null);
+
+    expect(result.isError, isTrue);
+    expect(result.rawResult, equals('boom'));
+    expect(result.stringResult, equals('boom'));
+  });
+
   test('IsolateQjs closes and restarts its worker', () async {
     final runtime = IsolateQjs();
 
