@@ -255,10 +255,13 @@ extension HandlePromises on JavascriptRuntime {
       registerRuntimeTimer(pollTimer);
       (value.rawResult as Future<dynamic>).then<void>(
         (dynamic result) {
-          cleanup();
-          if (!completer.isCompleted) {
-            completer
-                .complete(JsEvalResult(jsonEncode(result), value.rawResult));
+          try {
+            final encodedResult = jsonEncode(result);
+            cleanup();
+            if (completer.isCompleted) return;
+            completer.complete(JsEvalResult(encodedResult, value.rawResult));
+          } catch (error) {
+            completeError(error);
           }
         },
         onError: (Object error, StackTrace stack) =>

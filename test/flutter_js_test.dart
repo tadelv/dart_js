@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_js/extensions/fetch.dart';
@@ -68,6 +69,18 @@ void main() {
     } finally {
       runtime.dispose();
     }
+  });
+
+  test('handlePromise reports non-JSON values', () async {
+    final promise = jsRuntime.evaluate('Promise.resolve(() => 42)');
+
+    await expectLater(
+      jsRuntime.handlePromise(
+        promise,
+        timeout: const Duration(seconds: 1),
+      ),
+      throwsA(isA<JsonUnsupportedObjectError>()),
+    );
   });
 
   test('leak test', () async {
