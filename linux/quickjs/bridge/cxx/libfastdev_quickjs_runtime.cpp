@@ -336,7 +336,7 @@ extern "C"
         return opaque->timeout > 0 && std::chrono::steady_clock::now() >= opaque->deadline;
     }
 
-    void resetRuntimeTimeout(JSRuntime *rt)
+    DLLEXPORT void jsResetRuntimeTimeout(JSRuntime *rt)
     {
         RuntimeOpaque *opaque = static_cast<RuntimeOpaque *>(JS_GetRuntimeOpaque(rt));
         if (opaque != nullptr && opaque->timeout > 0)
@@ -411,7 +411,7 @@ extern "C"
         JS_SetRuntimeOpaque(rt, opaque);
         if (timeout > 0)
         {
-            resetRuntimeTimeout(rt);
+            jsResetRuntimeTimeout(rt);
             JS_SetInterruptHandler(rt, interruptRuntime, opaque);
         }
         JS_SetHostPromiseRejectionTracker(rt, js_promise_rejection_tracker, nullptr);
@@ -499,7 +499,7 @@ extern "C"
     {
         JSRuntime *rt = JS_GetRuntime(ctx);
         JS_UpdateStackTop(rt);
-        resetRuntimeTimeout(rt);
+        jsResetRuntimeTimeout(rt);
         JSValue *ret = new JSValue(JS_Eval(ctx, input, input_len, filename, eval_flags));
         return ret;
     }
@@ -688,7 +688,7 @@ extern "C"
     {
         JSRuntime *rt = JS_GetRuntime(ctx);
         JS_UpdateStackTop(rt);
-        resetRuntimeTimeout(rt);
+        jsResetRuntimeTimeout(rt);
         JSValue *ret = new JSValue(JS_Call(ctx, *func_obj, *this_obj, argc, argv));
         return ret;
     }
@@ -706,7 +706,6 @@ extern "C"
     DLLEXPORT int32_t jsExecutePendingJob(JSRuntime *rt)
     {
         JS_UpdateStackTop(rt);
-        resetRuntimeTimeout(rt);
         JSContext *ctx;
         int ret = JS_ExecutePendingJob(rt, &ctx);
         return ret;
