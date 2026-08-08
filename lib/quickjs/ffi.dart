@@ -980,6 +980,18 @@ final Pointer<JSValue> Function(
             )>>('jsGetException')
     .asFunction();
 
+final Pointer<JSValue> Function(
+  Pointer<JSContext> ctx,
+  Pointer<JSValue> obj,
+) jsJSONStringify = _qjsLib
+    .lookup<
+        NativeFunction<
+            Pointer<JSValue> Function(
+              Pointer<JSContext>,
+              Pointer<JSValue>,
+            )>>('jsJSONStringify')
+    .asFunction();
+
 final void Function(
   Pointer<JSRuntime> rt,
 ) jsResetRuntimeTimeout = _qjsLib

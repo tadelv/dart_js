@@ -146,6 +146,33 @@ void main() {
     expect(result.stringResult, equals('boom'));
   });
 
+  test('QuickJS applies native JSON semantics', () {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final object = jsRuntime.evaluate('''
+      ({
+        omitted: undefined,
+        kept: null,
+        nonFinite: Infinity,
+        fn: function () {}
+      })
+    ''');
+    final transformed = jsRuntime.evaluate('''
+      ({ toJSON: function () { return { answer: 42 }; } })
+    ''');
+    final cyclic = jsRuntime.evaluate('''
+      var value = {};
+      value.self = value;
+      value;
+    ''');
+
+    expect(
+      jsRuntime.jsonStringify(object),
+      equals('{"kept":null,"nonFinite":null}'),
+    );
+    expect(jsRuntime.jsonStringify(transformed), equals('{"answer":42}'));
+    expect(() => jsRuntime.jsonStringify(cyclic), throwsStateError);
+  });
+
   test('IsolateQjs closes and restarts its worker', () async {
     final runtime = IsolateQjs();
 

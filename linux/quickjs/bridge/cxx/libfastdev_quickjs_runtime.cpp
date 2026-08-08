@@ -703,6 +703,14 @@ extern "C"
         return new JSValue(JS_GetException(ctx));
     }
 
+    DLLEXPORT JSValue *jsJSONStringify(JSContext *ctx, JSValueConst *obj)
+    {
+        JSRuntime *rt = JS_GetRuntime(ctx);
+        JS_UpdateStackTop(rt);
+        jsResetRuntimeTimeout(rt);
+        return new JSValue(JS_JSONStringify(ctx, *obj, JS_UNDEFINED, JS_UNDEFINED));
+    }
+
     DLLEXPORT int32_t jsExecutePendingJob(JSRuntime *rt)
     {
         JS_UpdateStackTop(rt);
