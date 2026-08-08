@@ -264,6 +264,7 @@ void jsFreeRuntime(
   Pointer<JSRuntime> rt,
 ) {
   jsReleaseRuntimeRefs(rt);
+  runtimeOpaques.remove(rt);
   _jsFreeRuntime(rt);
 }
 

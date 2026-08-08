@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_js/extensions/fetch.dart';
 import 'package:flutter_js/extensions/xhr.dart';
 import 'package:flutter_js/flutter_js.dart';
+import 'package:flutter_js/quickjs/ffi.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -40,6 +41,20 @@ void main() {
 
     expect(jsRuntime.localContext, isEmpty);
     expect(jsRuntime.evaluate('21 * 2').rawResult, equals(42));
+  });
+
+  test('QuickJS removes runtime state when closing', () {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final initialRuntimeCount = runtimeOpaques.length;
+    final runtime = QuickJsRuntime2();
+
+    try {
+      expect(runtimeOpaques.length, initialRuntimeCount + 1);
+      runtime.close();
+      expect(runtimeOpaques.length, initialRuntimeCount);
+    } finally {
+      runtime.dispose();
+    }
   });
 
   test('QuickJS interrupts execution after its timeout', () {
