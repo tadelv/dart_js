@@ -37,6 +37,41 @@ void main() {
     expect(jsRuntime.callFunction(function, 1.5).rawResult, equals(1.75));
   });
 
+  test('QuickJS scopes callback arguments to callback completion', () async {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final invokeCallback = jsRuntime
+        .evaluate('(callback) => callback((value) => value * 2)')
+        .rawResult;
+    dynamic asyncCallback;
+    final asyncResult = jsRuntime.callFunction(
+      invokeCallback,
+      (dynamic callback) async {
+        asyncCallback = callback;
+        await Future<void>.delayed(Duration.zero);
+        return callback.invoke([21]);
+      },
+    );
+
+    final settled = await jsRuntime.handlePromise(
+      asyncResult,
+      timeout: const Duration(seconds: 2),
+    );
+
+    expect(settled.stringResult, '42');
+    expect(() => asyncCallback.invoke([21]), throwsA(isA<JSError>()));
+
+    dynamic throwingCallback;
+    final throwingResult = jsRuntime.callFunction(invokeCallback, (
+      dynamic callback,
+    ) {
+      throwingCallback = callback;
+      throw StateError('callback failed');
+    });
+
+    expect(throwingResult.isError, isTrue);
+    expect(() => throwingCallback.invoke([21]), throwsA(isA<JSError>()));
+  });
+
   test('QuickJS releases retained values before closing its context', () {
     if (jsRuntime is! QuickJsRuntime2) return;
     final result = jsRuntime.evaluate('({ answer: 42 })');
