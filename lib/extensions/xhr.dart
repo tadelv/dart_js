@@ -206,10 +206,11 @@ XMLHttpRequest.prototype.getAllResponseHeaders = function() {
 };
 XMLHttpRequest.prototype.getResponseHeader = function(name) {
   var ret = "";
+  var lowerName = name.toLowerCase();
   for (var i = 0; i < this._responseHeaders.length; i++) {
     var keyValue = this._responseHeaders[i];
-    if (keyValue[0] !== name) continue;
-    if (ret === "") ret += ", ";
+    if (keyValue[0].toLowerCase() !== lowerName) continue;
+    if (ret !== "") ret += ", ";
     ret += keyValue[1];
   }
   return ret;
@@ -328,12 +329,14 @@ extension JavascriptRuntimeXhrExtension on JavascriptRuntime {
         try {
           responseText = jsonEncode(json.decode(responseText));
         } on Object {}
+        final xhrResponseInfo = XhtmlHttpResponseInfo(
+          statusCode: response.statusCode,
+          statusText: response.reasonPhrase ?? '',
+        );
+        response.headers.forEach(xhrResponseInfo.addResponseHeaders);
         final xhrResult = XmlHttpRequestResponse(
           responseText: responseText,
-          responseInfo: XhtmlHttpResponseInfo(
-            statusCode: response.statusCode,
-            statusText: response.reasonPhrase ?? '',
-          ),
+          responseInfo: xhrResponseInfo,
         );
         final responseInfo = jsonEncode(xhrResult.responseInfo);
         final callback = '''
@@ -450,7 +453,7 @@ class XhtmlHttpResponseInfo {
     return {
       "statusCode": statusCode,
       "statusText": statusText,
-      "responseHeaders": jsonEncode(responseHeaders)
+      "responseHeaders": responseHeaders
     };
   }
 }

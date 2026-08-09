@@ -19,6 +19,7 @@ class _TestHttpClient extends http.BaseClient {
       Stream<List<int>>.value(utf8.encode('{"value":42}')),
       200,
       reasonPhrase: 'OK',
+      headers: {'x-test': 'first', 'x-mode': 'active'},
     );
   }
 }
@@ -128,6 +129,45 @@ void main() {
         expect(
           runtime.evaluate('Object.keys(xhrRequests).length').stringResult,
           '0',
+        );
+      } finally {
+        runtime.dispose();
+        xhrSetHttpClient(null);
+        client.close();
+      }
+    },
+    skip: skipReason,
+  );
+
+  test(
+    'XHR preserves response headers',
+    () async {
+      final runtime = createRuntime();
+      final client = _TestHttpClient();
+      xhrSetHttpClient(client);
+      try {
+        runtime.enableXhr();
+        runtime.evaluate('''
+          var xhrHeaderResult = null;
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', 'https://example.test');
+          xhr.onload = function() {
+            var all = xhr.getAllResponseHeaders().toLowerCase();
+            xhrHeaderResult = {
+              all: all.indexOf('x-test: first\\r\\n') !== -1 &&
+                  all.indexOf('x-mode: active\\r\\n') !== -1,
+              one: xhr.getResponseHeader('X-Test')
+            };
+          };
+          xhr.send();
+        ''');
+
+        await Future<void>.delayed(Duration(milliseconds: 200));
+        expect(
+          jsonDecode(
+            runtime.evaluate('JSON.stringify(xhrHeaderResult)').stringResult,
+          ),
+          {'all': true, 'one': 'first'},
         );
       } finally {
         runtime.dispose();
