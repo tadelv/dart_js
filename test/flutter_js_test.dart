@@ -122,13 +122,24 @@ void main() {
     if (jsRuntime is! QuickJsRuntime2) return;
     final function = jsRuntime.evaluate('(value) => value * 2');
     final value = jsRuntime.evaluate('21');
-    final object = jsRuntime.evaluate('({ answer: 42 })');
+    final object = jsRuntime.evaluate(
+      'globalThis.obj = { answer: 42 }; globalThis.obj',
+    );
+    final sameObject = jsRuntime.evaluate(
+      '(value) => value === globalThis.obj',
+    );
+    final error = jsRuntime.evaluate('throw "boom"');
 
     expect(
       jsRuntime.callFunction(function.rawResult, value.rawResult).rawResult,
       equals(42),
     );
+    expect(
+      jsRuntime.callFunction(sameObject.rawResult, object.rawResult).rawResult,
+      isTrue,
+    );
     expect(jsRuntime.convertValue<int>(value), equals(21));
+    expect(() => jsRuntime.convertValue<String>(error), throwsStateError);
     expect(jsRuntime.jsonStringify(object), equals('{"answer":42}'));
   });
 
