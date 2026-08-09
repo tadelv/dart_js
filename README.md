@@ -306,11 +306,9 @@ The C wrapper library is hosted on this github repository: https://github.com/ab
 
 We just separated the code to allow build it and in this repository we have only the released shared library, so each application using the flutter_js does not need to keep recompiling it all the time
 
-## QuickJs Android shared libraries
+## QuickJS Android shared library
 
-The library wrapper, both QuickJS and JavascriptCore, are also compiled in a separated repository: https://github.com/fast-development/android-js-runtimes
-
-With the library being compiled and published to jitpack, applications using the wrappers, through flutter_js does not need to compile the shared library using Android NDK.
+On Android, Gradle builds the bundled QuickJS bridge from this repository using CMake and the Android NDK. No separately published runtime dependency is required.
 
 
 ## Unit Testing javascript evaluation

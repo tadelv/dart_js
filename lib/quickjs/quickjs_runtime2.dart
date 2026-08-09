@@ -26,6 +26,7 @@ typedef _JsHostPromiseRejectionHandler = void Function(dynamic reason);
 final _quickJsResultFinalizer =
     Finalizer<_JSObject>((nativeResult) => nativeResult.destroy());
 final _quickJsNativeResults = Expando<_JSObject>();
+final _quickJsNativeValues = Expando<_JSObject>();
 
 /// Quickjs engine for flutter.
 class QuickJsRuntime2 extends JavascriptRuntime {
@@ -204,7 +205,17 @@ class QuickJsRuntime2 extends JavascriptRuntime {
         isPromise: result is Future,
       );
       _quickJsNativeResults[evalResult] = nativeResult;
-      _quickJsResultFinalizer.attach(evalResult, nativeResult);
+      final nativeOwner = result == null ||
+              result is num ||
+              result is String ||
+              result is bool ||
+              result is _JSObject
+          ? evalResult
+          : result as Object;
+      if (!identical(nativeOwner, evalResult)) {
+        _quickJsNativeValues[nativeOwner] = nativeResult;
+      }
+      _quickJsResultFinalizer.attach(nativeOwner, nativeResult);
       return evalResult;
     } catch (_) {
       nativeResult.destroy();
@@ -247,7 +258,14 @@ class QuickJsRuntime2 extends JavascriptRuntime {
     }
     try {
       if (fn is _JSFunction) {
-        final result = fn._invoke([obj]);
+        final nativeObj =
+            obj == null || obj is num || obj is String || obj is bool
+                ? null
+                : _quickJsNativeValues[obj as Object];
+        final argument = nativeObj?._ctx == fn._ctx && nativeObj?._val != null
+            ? nativeObj
+            : obj;
+        final result = fn._invoke([argument]);
         return _consumeResult(fn._ctx!, result);
       }
       final result = fn.invoke([obj]);
@@ -264,6 +282,9 @@ class QuickJsRuntime2 extends JavascriptRuntime {
   @override
   T? convertValue<T>(JsEvalResult jsValue) {
     ensureRuntimeActive();
+    if (jsValue.isError) {
+      throw StateError('Cannot convert a JavaScript error result');
+    }
     return jsValue.rawResult as T?;
   }
 
