@@ -29,3 +29,27 @@ target_link_libraries(quickjs_c_bridge_plugin PRIVATE
   dl
   pthread
 )
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(value_wrapper_ownership_test
+    "${PLUGIN_PACKAGE_DIR}/quickjs/bridge/cxx/tests/value_wrapper_ownership_test.cpp"
+    "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/cutils.c"
+    "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/libregexp.c"
+    "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/libunicode.c"
+    "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/quickjs.c"
+    "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/dtoa.c"
+  )
+  target_include_directories(value_wrapper_ownership_test PRIVATE
+    ${QUICKJS_ENGINE_INCLUDE_DIRS}
+  )
+  target_compile_definitions(value_wrapper_ownership_test PRIVATE
+    ${QUICKJS_ENGINE_DEFS}
+  )
+  target_link_libraries(value_wrapper_ownership_test PRIVATE
+    m
+    dl
+    pthread
+  )
+  add_test(NAME value_wrapper_ownership COMMAND value_wrapper_ownership_test)
+endif()
