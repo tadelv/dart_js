@@ -153,9 +153,7 @@ XMLHttpRequest.prototype._send_native_callback = function(responseInfo, response
         try {
             this.response = JSON.parse(responseText);
         }
-        catch (e) {
-            error = "Could not parse JSON response: " + responseText;
-        }
+        catch (_) {}
         break;
       default:
         error = "Unsupported responseType: " + responseInfo.responseType;
