@@ -148,6 +148,19 @@ void main() {
     );
   });
 
+  test('handlePromise returns the settled QuickJS value', () async {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final promise = jsRuntime.evaluate('Promise.resolve(42)');
+
+    final result = await jsRuntime.handlePromise(
+      promise,
+      timeout: const Duration(seconds: 1),
+    );
+
+    expect(result.rawResult, 42);
+    expect(jsRuntime.convertValue<int>(result), 42);
+  });
+
   test('QuickJS implements the runtime value contract', () {
     if (jsRuntime is! QuickJsRuntime2) return;
     final function = jsRuntime.evaluate('(value) => value * 2');
