@@ -13,10 +13,14 @@ import 'package:http/http.dart' as http;
 import 'package:test/test.dart';
 
 class _TestHttpClient extends http.BaseClient {
+  _TestHttpClient({this.responseBody = '{"value":42}'});
+
+  final String responseBody;
+
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     return http.StreamedResponse(
-      Stream<List<int>>.value(utf8.encode('{"value":42}')),
+      Stream<List<int>>.value(utf8.encode(responseBody)),
       200,
       reasonPhrase: 'OK',
       headers: {'x-test': 'first', 'x-mode': 'active'},
@@ -168,6 +172,39 @@ void main() {
             runtime.evaluate('JSON.stringify(xhrHeaderResult)').stringResult,
           ),
           {'all': true, 'one': 'first'},
+        );
+      } finally {
+        runtime.dispose();
+        xhrSetHttpClient(null);
+        client.close();
+      }
+    },
+    skip: skipReason,
+  );
+
+  test(
+    'XHR preserves decoded response text',
+    () async {
+      const responseBody = '{\n  "value": 42\n}';
+      final runtime = createRuntime();
+      final client = _TestHttpClient(responseBody: responseBody);
+      xhrSetHttpClient(client);
+      try {
+        runtime.enableXhr();
+        runtime.evaluate('''
+          var xhrResponseText = null;
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', 'https://example.test');
+          xhr.onload = function() { xhrResponseText = xhr.responseText; };
+          xhr.send();
+        ''');
+
+        await Future<void>.delayed(Duration(milliseconds: 200));
+        expect(
+          jsonDecode(
+            runtime.evaluate('JSON.stringify(xhrResponseText)').stringResult,
+          ),
+          responseBody,
         );
       } finally {
         runtime.dispose();
