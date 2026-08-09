@@ -101,6 +101,9 @@ jobs:
         env:
           LIBQUICKJSC_PATH: ${{ github.workspace }}/build/libquickjs_c_bridge_plugin.so
 
+      - name: Test native value ownership
+        run: ctest --test-dir build --output-on-failure
+
       - name: Run QuickJS regression suite against committed .so
         run: dart test --concurrency=1
         env:
