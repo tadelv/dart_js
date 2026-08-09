@@ -209,6 +209,7 @@ dynamic _jsToDart(Pointer<JSContext> ctx, Pointer<JSValue> val,
       } else if (jsIsArray(ctx, val) != 0) {
         final jslength = _jsGetPropertyValue(ctx, val, 'length');
         final length = jsToInt64(ctx, jslength);
+        jsFreeValue(ctx, jslength);
         final ret = [];
         cache[valptr] = ret;
         for (var i = 0; i < length; ++i) {
