@@ -1,4 +1,8 @@
+#if defined(__linux__) && !defined(__ANDROID__)
+#include "quickjs.h"
+#else
 #include "quickjs/quickjs.h"
+#endif
 #include <chrono>
 #include <stdio.h>
 #include <stdlib.h>
