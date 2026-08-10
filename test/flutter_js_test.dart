@@ -40,6 +40,28 @@ void main() {
     expect(jsRuntime.evaluate('21 * 2').rawResult, equals(42));
   });
 
+  test('QuickJS close resets async state and restores core globals', () async {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final runtime = jsRuntime as QuickJsRuntime2;
+    final pending = runtime.handlePromise(
+      runtime.evaluate('new Promise(function() {})'),
+    );
+
+    runtime.close();
+
+    await expectLater(
+      pending.timeout(Duration(milliseconds: 100)),
+      throwsA(isA<StateError>()),
+    );
+    expect(runtime.disposeCallbackCount, 0);
+    expect(
+      runtime
+          .evaluate('typeof sendMessage + ":" + typeof setTimeout')
+          .stringResult,
+      'function:function',
+    );
+  });
+
   test('QuickJS removes runtime state when closing', () {
     if (jsRuntime is! QuickJsRuntime2) return;
     final initialRuntimeCount = runtimeOpaques.length;

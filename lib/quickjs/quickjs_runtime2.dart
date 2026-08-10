@@ -32,6 +32,7 @@ final _quickJsNativeValues = Expando<_JSObject>();
 class QuickJsRuntime2 extends JavascriptRuntime {
   Pointer<JSRuntime>? _rt;
   Pointer<JSContext>? _ctx;
+  bool _needsInit = false;
 
   /// Max stack size for quickjs.
   int stackSize;
@@ -141,28 +142,24 @@ class QuickJsRuntime2 extends JavascriptRuntime {
   close() {
     final rt = _rt;
     final ctx = _ctx;
-    if (rt == null) {
-      _rt = null;
-      _ctx = null;
-      if (ctx != null) jsFreeContext(ctx);
-      localContext.clear();
-      return;
-    }
     _executePendingJob();
+    cancelRuntimeTimers();
+    runDisposeCallbacks();
     try {
       for (final obj in localContext.values) {
         JSRef.freeRecursive(obj);
       }
       localContext.clear();
-      jsReleaseRuntimeRefs(rt);
+      if (rt != null) jsReleaseRuntimeRefs(rt);
       if (ctx != null) jsFreeContext(ctx);
-      jsFreeRuntime(rt);
+      if (rt != null) jsFreeRuntime(rt);
     } on String catch (e) {
       throw JSError(e);
     } finally {
       _rt = null;
       _ctx = null;
-      localContext.clear();
+      clearRuntimeState();
+      _needsInit = isRuntimeActive;
     }
   }
 
@@ -239,6 +236,15 @@ class QuickJsRuntime2 extends JavascriptRuntime {
   }) {
     ensureRuntimeActive();
     _ensureEngine();
+    if (_needsInit) {
+      _needsInit = false;
+      try {
+        init();
+      } catch (_) {
+        _needsInit = true;
+        rethrow;
+      }
+    }
     final ctx = _ctx!;
     final jsval = jsEval(
       ctx,
@@ -293,14 +299,10 @@ class QuickJsRuntime2 extends JavascriptRuntime {
     if (!beginDispose()) return;
     try {
       port.close(); // stop dispatch loop
-      cancelRuntimeTimers();
-      runDisposeCallbacks();
       close(); // close engine
     } on JSError catch (e) {
       print(e); // catch reference leak exception
     } finally {
-      channelFunctions.clear();
-      clearDartContext();
       finishDispose();
     }
   }
