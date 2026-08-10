@@ -19,22 +19,6 @@ project(quickjs_c_bridge LANGUAGES C CXX)
 set(PLUGIN_PACKAGE_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
 
 # ---------------------------------------------------------------------
-# Patch quickjs.h to remove 'static inline' from JS_NewString
-# ---------------------------------------------------------------------
-set(QUICKJS_HEADER "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/quickjs.h")
-
-file(READ "${QUICKJS_HEADER}" QUICKJS_H_CONTENTS)
-
-string(REPLACE
-  "static inline JSValue JS_NewString"
-  "JSValue JS_NewString"
-  QUICKJS_H_CONTENTS
-  "${QUICKJS_H_CONTENTS}"
-)
-
-file(WRITE "${QUICKJS_HEADER}" "${QUICKJS_H_CONTENTS}")
-
-# ---------------------------------------------------------------------
 # Add JS_IsPromise to quickjs if missing
 # ---------------------------------------------------------------------
 set(QUICKJS_C "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/quickjs.c")
@@ -42,7 +26,7 @@ set(QUICKJS_H "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/quickjs.h")
 
 file(READ "${QUICKJS_H}" QUICKJS_H_CONTENTS)
 if(NOT QUICKJS_H_CONTENTS MATCHES "JS_IsPromise")
-  file(APPEND "${QUICKJS_H}" "\nBOOL JS_IsPromise(JSContext *ctx, JSValueConst val);\n")
+  file(APPEND "${QUICKJS_H}" "\n#ifdef __cplusplus\nextern \"C\" {\n#endif\nJS_BOOL JS_IsPromise(JSContext *ctx, JSValueConst val);\n#ifdef __cplusplus\n}\n#endif\n")
 endif()
 
 file(READ "${QUICKJS_C}" QUICKJS_C_CONTENTS)

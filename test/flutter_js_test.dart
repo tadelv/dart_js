@@ -29,6 +29,14 @@ void main() {
     expect(result.stringResult, equals('125'));
   });
 
+  test('QuickJS round trips fractional values', () {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final function = jsRuntime.evaluate('(value) => value + 0.25').rawResult;
+
+    expect(jsRuntime.evaluate('1.5').rawResult, equals(1.5));
+    expect(jsRuntime.callFunction(function, 1.5).rawResult, equals(1.75));
+  });
+
   test('QuickJS releases retained values before closing its context', () {
     if (jsRuntime is! QuickJsRuntime2) return;
     final result = jsRuntime.evaluate('({ answer: 42 })');
