@@ -105,6 +105,7 @@ abstract class JavascriptRuntime {
   JavascriptRuntimeLifecycle _lifecycle = JavascriptRuntimeLifecycle.active;
   final Set<void Function()> _disposeCallbacks = {};
   final Set<Timer> _runtimeTimers = {};
+  final Map<String, Timer> _runtimeTimerRecords = {};
 
   bool get isRuntimeActive => _lifecycle == JavascriptRuntimeLifecycle.active;
 
@@ -148,6 +149,7 @@ abstract class JavascriptRuntime {
   void cancelRuntimeTimers() {
     final timers = List<Timer>.of(_runtimeTimers);
     _runtimeTimers.clear();
+    _runtimeTimerRecords.clear();
     for (final timer in timers) {
       timer.cancel();
     }
@@ -227,40 +229,105 @@ abstract class JavascriptRuntime {
 
   void _setupSetTimeout() {
     evaluate("""
-      var __NATIVE_FLUTTER_JS__setTimeoutCount = -1;
-      var __NATIVE_FLUTTER_JS__setTimeoutCallbacks = {};
-      function setTimeout(fnTimeout, timeout) {
-        // console.log('Set Timeout Called');
-        try {
-        __NATIVE_FLUTTER_JS__setTimeoutCount += 1;
-          var timeoutIndex = '' + __NATIVE_FLUTTER_JS__setTimeoutCount;
-          __NATIVE_FLUTTER_JS__setTimeoutCallbacks[timeoutIndex] =  fnTimeout;
-          ;
-          // console.log(typeof(sendMessage));
-          // console.log('BLA');
-          sendMessage('SetTimeout', JSON.stringify({ timeoutIndex, timeout}));
-            
-        } catch (e) {
-          console.error('ERROR HERE',e.message);
+      var __NATIVE_FLUTTER_JS__timerCount = -1;
+      var __NATIVE_FLUTTER_JS__timerCallbacks = {};
+
+      function __NATIVE_FLUTTER_JS__coerceDelay(delay) {
+        var d = +delay;
+        if (isNaN(d) || d < 0) d = 0;
+        if (d > 2147483647) d = 2147483647;
+        return d;
+      }
+
+      function setTimeout(fn, delay) {
+        var args = Array.prototype.slice.call(arguments, 2);
+        __NATIVE_FLUTTER_JS__timerCount += 1;
+        var id = '' + __NATIVE_FLUTTER_JS__timerCount;
+        __NATIVE_FLUTTER_JS__timerCallbacks[id] = {
+          fn: fn,
+          args: args,
+          interval: false
+        };
+        sendMessage('SetTimer', JSON.stringify({
+          id: id,
+          delay: __NATIVE_FLUTTER_JS__coerceDelay(delay),
+          interval: false
+        }));
+        return id;
+      }
+
+      function clearTimeout(id) {
+        if (id === undefined || id === null) return;
+        var key = '' + id;
+        if (__NATIVE_FLUTTER_JS__timerCallbacks[key] !== undefined) {
+          delete __NATIVE_FLUTTER_JS__timerCallbacks[key];
+          sendMessage('ClearTimer', JSON.stringify({ id: key }));
         }
-      };
+      }
+
+      function setInterval(fn, delay) {
+        var args = Array.prototype.slice.call(arguments, 2);
+        __NATIVE_FLUTTER_JS__timerCount += 1;
+        var id = '' + __NATIVE_FLUTTER_JS__timerCount;
+        __NATIVE_FLUTTER_JS__timerCallbacks[id] = {
+          fn: fn,
+          args: args,
+          interval: true
+        };
+        sendMessage('SetTimer', JSON.stringify({
+          id: id,
+          delay: __NATIVE_FLUTTER_JS__coerceDelay(delay),
+          interval: true
+        }));
+        return id;
+      }
+
+      function clearInterval(id) {
+        clearTimeout(id);
+      }
+
       1
     """);
-    //print('SET TIMEOUT EVAL RESULT: $setTImeoutResult');
-    onMessageVoid('SetTimeout', (dynamic args) {
-      final duration = args['timeout'] as int? ?? 0;
-      final idx = args['timeoutIndex'] as String;
+    onMessageVoid('SetTimer', (dynamic args) {
+      final id = args['id'] as String;
+      final delay = (args['delay'] as num).clamp(0, 2147483647).toInt();
+      final interval = args['interval'] as bool? ?? false;
       late Timer timer;
-      timer = Timer(Duration(milliseconds: duration), () {
-        unregisterRuntimeTimer(timer);
-        if (!isRuntimeActive) return;
-        evaluate("""
-          __NATIVE_FLUTTER_JS__setTimeoutCallbacks[$idx].call();
-          delete __NATIVE_FLUTTER_JS__setTimeoutCallbacks[$idx];
-        """);
-      });
+      if (interval) {
+        timer = Timer.periodic(Duration(milliseconds: delay), (_) {
+          _fireTimerCallback(id);
+        });
+      } else {
+        timer = Timer(Duration(milliseconds: delay), () {
+          unregisterRuntimeTimer(timer);
+          _runtimeTimerRecords.remove(id);
+          _fireTimerCallback(id);
+        });
+      }
+      _runtimeTimerRecords[id] = timer;
       registerRuntimeTimer(timer);
     });
+    onMessageVoid('ClearTimer', (dynamic args) {
+      final id = args['id'] as String;
+      final timer = _runtimeTimerRecords.remove(id);
+      if (timer != null) {
+        unregisterRuntimeTimer(timer);
+        timer.cancel();
+      }
+    });
+  }
+
+  void _fireTimerCallback(String id) {
+    if (!isRuntimeActive) return;
+    evaluate("""
+      var entry = __NATIVE_FLUTTER_JS__timerCallbacks["$id"];
+      if (entry) {
+        entry.fn.apply(null, entry.args);
+        if (!entry.interval) {
+          delete __NATIVE_FLUTTER_JS__timerCallbacks["$id"];
+        }
+      }
+    """);
   }
 
   sendMessage({
