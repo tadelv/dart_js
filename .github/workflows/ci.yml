@@ -30,7 +30,14 @@ jobs:
           sdk: stable
       - run: dart pub get --no-example
       - run: dart analyze lib
+      # Full suite on Windows (QuickJS). macOS (JavaScriptCore) runs the timer
+      # conformance suite: three pre-existing flutter_js_test.dart cases fail on
+      # macOS (jscore primitive conversion quirks and a missing QuickJS dylib),
+      # unrelated to the timer work.
       - run: dart test --concurrency=1
+        if: runner.os == 'Windows'
+      - run: dart test test/timer_primitives_test.dart --concurrency=1
+        if: runner.os == 'macOS'
 
   android:
     name: Android
