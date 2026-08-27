@@ -43,7 +43,7 @@ jobs:
           cache: true
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c
         with:
-          gradle-version: 8.10.2
+          gradle-version: 8.14.5
       - run: flutter pub get
       - run: flutter pub get
         working-directory: example
