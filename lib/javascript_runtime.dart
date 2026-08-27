@@ -322,10 +322,10 @@ abstract class JavascriptRuntime {
     evaluate("""
       var entry = __NATIVE_FLUTTER_JS__timerCallbacks["$id"];
       if (entry) {
-        entry.fn.apply(null, entry.args);
         if (!entry.interval) {
           delete __NATIVE_FLUTTER_JS__timerCallbacks["$id"];
         }
+        entry.fn.apply(null, entry.args);
       }
     """);
   }

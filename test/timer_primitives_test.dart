@@ -66,7 +66,9 @@ void main() {
           count += step;
           if (count >= 6) {
             clearInterval(id);
-            resolve(count);
+            // Resolve after a delay longer than the interval period: a stray
+            // tick after clearInterval would raise count and fail the assert.
+            setTimeout(() => resolve(count), 20);
           }
         }, 5, 2);
       })
@@ -95,11 +97,12 @@ void main() {
         var count = 0;
         function tick() {
           count += 1;
-          if (count === 3) resolve('coerced');
+          if (count === 4) resolve('coerced');
         }
         setTimeout(tick);
         setTimeout(tick, -5);
         setTimeout(tick, '2');
+        setTimeout(tick, 1.5);
       })
     ''');
     final result = await jsRuntime.handlePromise(promise);
@@ -132,17 +135,39 @@ void main() {
     }
   });
 
+  test(
+      'a throwing one-shot callback does not leak bookkeeping or break later timers',
+      () async {
+    final promise = await jsRuntime.evaluateAsync('''
+      new Promise((resolve) => {
+        setTimeout(() => { throw new Error('boom'); }, 5);
+        setTimeout(() => {
+          var leaked = Object.keys(__NATIVE_FLUTTER_JS__timerCallbacks).length;
+          setTimeout(() => resolve(leaked === 0 ? 'clean' : 'leaked:' + leaked), 5);
+        }, 20);
+      })
+    ''');
+    final result = await jsRuntime.handlePromise(promise);
+    expect(jsonDecode(result.stringResult), 'clean');
+  });
+
   test('dispose cancels outstanding timers and no callbacks run', () async {
-    var fired = false;
+    var timeoutFired = false;
+    var intervalTicks = 0;
     jsRuntime.onMessageVoid('TimerProbe', (dynamic args) {
-      fired = true;
+      timeoutFired = true;
+    });
+    jsRuntime.onMessageVoid('IntervalProbe', (dynamic args) {
+      intervalTicks += 1;
     });
     jsRuntime.evaluate('''
       setTimeout(() => sendMessage('TimerProbe', JSON.stringify(['fired'])), 20);
+      setInterval(() => sendMessage('IntervalProbe', JSON.stringify(['tick'])), 5);
     ''');
     jsRuntime.dispose();
     await Future.delayed(const Duration(milliseconds: 80));
-    expect(fired, isFalse);
+    expect(timeoutFired, isFalse);
+    expect(intervalTicks, 0);
   });
 
   test('repeated create/dispose cycles with pending timers stay safe',
