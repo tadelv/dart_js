@@ -113,6 +113,26 @@ abstract base class JSRuntime extends Opaque {}
 
 abstract base class JSPropertyEnum extends Opaque {}
 
+final class QuickJsMemoryUsageNative extends Struct {
+  @Int64()
+  external int mallocSize;
+
+  @Int64()
+  external int memoryUsedSize;
+
+  @Int64()
+  external int mallocCount;
+
+  @Int64()
+  external int stringCount;
+
+  @Int64()
+  external int objectCount;
+
+  @Int64()
+  external int functionCount;
+}
+
 DynamicLibrary _openQuickJsLibrary() {
   final configuredPath = Platform.environment['LIBQUICKJSC_PATH'];
   if (configuredPath != null) return DynamicLibrary.open(configuredPath);
@@ -247,6 +267,28 @@ final void Function(
               Pointer<JSRuntime>,
               IntPtr,
             )>>('jsSetMemoryLimit')
+    .asFunction();
+
+final void Function(
+  Pointer<JSRuntime>,
+  Pointer<QuickJsMemoryUsageNative>,
+) jsComputeMemoryUsage = _qjsLib
+    .lookup<
+        NativeFunction<
+            Void Function(
+              Pointer<JSRuntime>,
+              Pointer<QuickJsMemoryUsageNative>,
+            )>>('jsComputeMemoryUsage')
+    .asFunction();
+
+final void Function(
+  Pointer<JSRuntime>,
+) jsRunGC = _qjsLib
+    .lookup<
+        NativeFunction<
+            Void Function(
+              Pointer<JSRuntime>,
+            )>>('jsRunGC')
     .asFunction();
 
 /// void jsFreeRuntime(JSRuntime *rt)

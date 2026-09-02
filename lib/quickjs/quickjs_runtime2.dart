@@ -12,6 +12,7 @@ import 'package:flutter_js/flutter_js.dart';
 import 'ffi.dart';
 
 export 'ffi.dart' show JSEvalFlag, JSRef;
+export 'memory_usage.dart';
 
 part './isolate.dart';
 part './object.dart';
@@ -136,6 +137,41 @@ class QuickJsRuntime2 extends JavascriptRuntime {
     if (memoryLimit > 0) jsSetMemoryLimit(rt, memoryLimit);
     _rt = rt;
     _ctx = jsNewContext(rt);
+  }
+
+  QuickJsMemoryUsage get memoryUsage {
+    ensureRuntimeActive();
+    if (!Platform.isAndroid && !Platform.isLinux) {
+      throw UnsupportedError(
+        'QuickJS memory diagnostics require the Android/Linux source build',
+      );
+    }
+    _ensureEngine();
+    final result = calloc<QuickJsMemoryUsageNative>();
+    try {
+      jsComputeMemoryUsage(_rt!, result);
+      return QuickJsMemoryUsage(
+        allocatedBytes: result.ref.mallocSize,
+        memoryUsedBytes: result.ref.memoryUsedSize,
+        allocationCount: result.ref.mallocCount,
+        stringCount: result.ref.stringCount,
+        objectCount: result.ref.objectCount,
+        functionCount: result.ref.functionCount,
+      );
+    } finally {
+      calloc.free(result);
+    }
+  }
+
+  void runGC() {
+    ensureRuntimeActive();
+    if (!Platform.isAndroid && !Platform.isLinux) {
+      throw UnsupportedError(
+        'QuickJS memory diagnostics require the Android/Linux source build',
+      );
+    }
+    _ensureEngine();
+    jsRunGC(_rt!);
   }
 
   /// Free Runtime and Context which can be recreate when evaluate again.

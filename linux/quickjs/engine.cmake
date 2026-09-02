@@ -2,7 +2,7 @@
 # every platform that uses the C++ bridge (Android + Linux).
 #
 # The engine is the vendored upstream QuickJS tree under quickjs/upstream
-# (currently 2025-09-13; see quickjs/upstream/VERSION) plus the C++ bridge
+# (currently 2026-06-04; see quickjs/upstream/VERSION) plus the C++ bridge
 # (quickjs/bridge/cxx/libfastdev_quickjs_runtime.cpp). Keeping the sources and
 # patches here — instead of copied into each platform CMakeLists — prevents
 # platform drift of the engine version (Android was stuck on QuickJS 2021-03-27

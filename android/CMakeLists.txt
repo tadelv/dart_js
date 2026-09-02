@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(fastdev_quickjs_runtime LANGUAGES C CXX)
 
-# Engine = vendored upstream QuickJS (2025-09-13) + C++ bridge. Shared with the
+# Engine = vendored upstream QuickJS (2026-06-04) + C++ bridge. Shared with the
 # Linux build via linux/quickjs/engine.cmake so every platform runs the same
 # engine version (previously Android was pinned to QuickJS 2021-03-27).
 include("${CMAKE_CURRENT_SOURCE_DIR}/../linux/quickjs/engine.cmake")
