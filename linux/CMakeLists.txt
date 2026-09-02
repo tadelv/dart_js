@@ -30,54 +30,29 @@ set_target_properties(${PLUGIN_NAME} PROPERTIES
   POSITION_INDEPENDENT_CODE ON
 )
 # ---------------------------------------------------------------------
-# Add JS_IsPromise to quickjs if missing
-# ---------------------------------------------------------------------
-set(QUICKJS_C "${CMAKE_CURRENT_LIST_DIR}/quickjs/upstream/quickjs.c")
-set(QUICKJS_H "${CMAKE_CURRENT_LIST_DIR}/quickjs/upstream/quickjs.h")
-
-file(READ "${QUICKJS_H}" QUICKJS_H_CONTENTS)
-if(NOT QUICKJS_H_CONTENTS MATCHES "JS_IsPromise")
-  file(APPEND "${QUICKJS_H}" "\n#ifdef __cplusplus\nextern \"C\" {\n#endif\nJS_BOOL JS_IsPromise(JSContext *ctx, JSValueConst val);\n#ifdef __cplusplus\n}\n#endif\n")
-endif()
-
-file(READ "${QUICKJS_C}" QUICKJS_C_CONTENTS)
-if(NOT QUICKJS_C_CONTENTS MATCHES "JS_IsPromise")
-  file(APPEND "${QUICKJS_C}" "\nBOOL JS_IsPromise(JSContext* ctx, JSValueConst val)\n{\n    JSObject *p;\n    if (JS_VALUE_GET_TAG(val) != JS_TAG_OBJECT)\n        return FALSE;\n    p = JS_VALUE_GET_OBJ(val);\n    return p->class_id == JS_CLASS_PROMISE;\n}\n")
-endif()
-
-# ---------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------
 set(PLUGIN_PACKAGE_DIR "${CMAKE_CURRENT_LIST_DIR}")
 
 # ---------------------------------------------------------------------
-# QuickJS + bridge + FIXUP (single .so)
+# QuickJS engine: sources/patches shared with the Android build via
+# quickjs/engine.cmake (single source of truth; do not edit engines here).
 # ---------------------------------------------------------------------
-add_library(quickjs_c_bridge_plugin SHARED
-  # QuickJS engine
-  "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/cutils.c"
-  "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/libregexp.c"
-  "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/libunicode.c"
-  "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/quickjs.c"
-  "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/dtoa.c"
+include("${PLUGIN_PACKAGE_DIR}/quickjs/engine.cmake")
 
-  # C++ bridge
-  "${PLUGIN_PACKAGE_DIR}/quickjs/bridge/cxx/libfastdev_quickjs_runtime.cpp"
-)
+add_library(quickjs_c_bridge_plugin SHARED ${QUICKJS_ENGINE_SOURCES})
 
 target_include_directories(quickjs_c_bridge_plugin PRIVATE
-  "${PLUGIN_PACKAGE_DIR}/quickjs/upstream"
-  "${PLUGIN_PACKAGE_DIR}/quickjs/bridge/cxx"
+  ${QUICKJS_ENGINE_INCLUDE_DIRS}
 )
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11")
 target_compile_options(quickjs_c_bridge_plugin PRIVATE
   -fPIC
-  # -std=gnu11
 )
 
 target_compile_definitions(quickjs_c_bridge_plugin PRIVATE
-  CONFIG_VERSION=\"2024-01-13\"
+  ${QUICKJS_ENGINE_DEFS}
 )
 
 set_target_properties(quickjs_c_bridge_plugin PROPERTIES
