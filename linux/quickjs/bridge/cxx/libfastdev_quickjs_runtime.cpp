@@ -330,6 +330,16 @@ extern "C"
         std::chrono::steady_clock::time_point deadline;
     };
 
+    struct QuickJsMemoryUsage
+    {
+        int64_t malloc_size;
+        int64_t memory_used_size;
+        int64_t malloc_count;
+        int64_t str_count;
+        int64_t obj_count;
+        int64_t js_func_count;
+    };
+
     int interruptRuntime(JSRuntime *rt, void *data)
     {
         RuntimeOpaque *opaque = static_cast<RuntimeOpaque *>(data);
@@ -463,6 +473,30 @@ extern "C"
     DLLEXPORT void jsSetMaxStackSize(JSRuntime *rt, size_t stack_size)
     {
         JS_SetMaxStackSize(rt, stack_size);
+    }
+
+    DLLEXPORT void jsSetMemoryLimit(JSRuntime *rt, size_t limit)
+    {
+        JS_SetMemoryLimit(rt, limit);
+    }
+
+    DLLEXPORT void jsComputeMemoryUsage(JSRuntime *rt, QuickJsMemoryUsage *result)
+    {
+        JSMemoryUsage usage;
+        JS_ComputeMemoryUsage(rt, &usage);
+        *result = {
+            usage.malloc_size,
+            usage.memory_used_size,
+            usage.malloc_count,
+            usage.str_count,
+            usage.obj_count,
+            usage.js_func_count,
+        };
+    }
+
+    DLLEXPORT void jsRunGC(JSRuntime *rt)
+    {
+        JS_RunGC(rt);
     }
 
     DLLEXPORT void jsFreeRuntime(JSRuntime *rt)

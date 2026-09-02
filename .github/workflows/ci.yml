@@ -68,9 +68,14 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
+        with:
+          sdk: stable
 
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y cmake g++
+
+      - run: dart pub get --no-example
 
       # Rebuild the QuickJS bridge from source (see linux/shared/CMakeLists.txt)
       # and compare its exported symbols against the committed prebuilt .so.
@@ -90,6 +95,11 @@ jobs:
             exit 1
           fi
           echo "Committed .so exports match fresh build ($(wc -l < /tmp/fresh.exports) symbols)"
+
+      - name: Run QuickJS memory regressions
+        run: dart test test/quickjs_memory_test.dart --concurrency=1
+        env:
+          LIBQUICKJSC_PATH: ${{ github.workspace }}/build/libquickjs_c_bridge_plugin.so
 
       # Always upload the fresh build so a stale .so can be recovered by
       # downloading the artifact and committing it.
