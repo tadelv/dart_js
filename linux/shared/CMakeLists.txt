@@ -32,13 +32,13 @@ target_link_libraries(quickjs_c_bridge_plugin PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  set(VALUE_WRAPPER_TEST_ENGINE_SOURCES ${QUICKJS_ENGINE_SOURCES})
+  list(REMOVE_ITEM VALUE_WRAPPER_TEST_ENGINE_SOURCES
+    "${QUICKJS_BRIDGE_DIR}/libfastdev_quickjs_runtime.cpp"
+  )
   add_executable(value_wrapper_ownership_test
     "${PLUGIN_PACKAGE_DIR}/quickjs/bridge/cxx/tests/value_wrapper_ownership_test.cpp"
-    "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/cutils.c"
-    "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/libregexp.c"
-    "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/libunicode.c"
-    "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/quickjs.c"
-    "${PLUGIN_PACKAGE_DIR}/quickjs/upstream/dtoa.c"
+    ${VALUE_WRAPPER_TEST_ENGINE_SOURCES}
   )
   target_include_directories(value_wrapper_ownership_test PRIVATE
     ${QUICKJS_ENGINE_INCLUDE_DIRS}
