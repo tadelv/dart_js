@@ -38,6 +38,8 @@ jobs:
         if: runner.os == 'Windows'
       - run: dart test test/timer_primitives_test.dart --concurrency=1
         if: runner.os == 'macOS'
+      - run: dart test test/javascriptcore_context_test.dart --concurrency=1
+        if: runner.os == 'macOS'
 
   android:
     name: Android
