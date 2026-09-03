@@ -325,10 +325,7 @@ extension JavascriptRuntimeXhrExtension on JavascriptRuntime {
             break;
         }
         if (disposed || !isRuntimeActive) return;
-        var responseText = utf8.decode(response.bodyBytes);
-        try {
-          responseText = jsonEncode(json.decode(responseText));
-        } on Object {}
+        final responseText = utf8.decode(response.bodyBytes);
         final xhrResponseInfo = XhtmlHttpResponseInfo(
           statusCode: response.statusCode,
           statusText: response.reasonPhrase ?? '',
