@@ -15,15 +15,20 @@ QuickJsMemoryUsage runBatch(QuickJsRuntime2 runtime, String script) {
 }
 
 void expectPlateau(
-  QuickJsMemoryUsage first,
-  QuickJsMemoryUsage second, {
+  List<QuickJsMemoryUsage> samples, {
   int byteSlack = 256 * 1024,
 }) {
+  final first = samples.first;
+  final last = samples.last;
   expect(
-    second.memoryUsedBytes,
+    last.memoryUsedBytes,
     lessThanOrEqualTo(first.memoryUsedBytes + byteSlack),
   );
-  expect(second.objectCount, lessThanOrEqualTo(first.objectCount + 32));
+  expect(
+    last.allocatedBytes,
+    lessThanOrEqualTo(first.allocatedBytes + byteSlack),
+  );
+  expect(last.objectCount, lessThanOrEqualTo(first.objectCount + 32));
 }
 
 void main() {
@@ -84,6 +89,8 @@ void main() {
       test('large btoa-style concatenation is reclaimable', () {
         final runtime = QuickJsRuntime2();
         try {
+          runtime.runGC();
+          final baseline = runtime.memoryUsage;
           final result = runtime.evaluate('''
             (function () {
               var alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
@@ -105,9 +112,14 @@ void main() {
           expectSuccessful(result);
           expect(result.rawResult, equals(2796204));
           runtime.runGC();
+          final collected = runtime.memoryUsage;
           expect(
-            runtime.memoryUsage.memoryUsedBytes,
-            lessThan(8 * 1024 * 1024),
+            collected.memoryUsedBytes,
+            lessThanOrEqualTo(baseline.memoryUsedBytes + 256 * 1024),
+          );
+          expect(
+            collected.allocatedBytes,
+            lessThanOrEqualTo(baseline.allocatedBytes + 256 * 1024),
           );
         } finally {
           runtime.dispose();
@@ -136,10 +148,9 @@ void main() {
 
         try {
           runBatch(runtime, workload);
-          final first = runBatch(runtime, workload);
-          final second = runBatch(runtime, workload);
+          final samples = List.generate(8, (_) => runBatch(runtime, workload));
 
-          expectPlateau(first, second);
+          expectPlateau(samples);
         } finally {
           runtime.dispose();
         }
@@ -163,10 +174,9 @@ void main() {
 
         try {
           runBatch(runtime, workload);
-          final first = runBatch(runtime, workload);
-          final second = runBatch(runtime, workload);
+          final samples = List.generate(8, (_) => runBatch(runtime, workload));
 
-          expectPlateau(first, second, byteSlack: 512 * 1024);
+          expectPlateau(samples, byteSlack: 512 * 1024);
         } finally {
           runtime.dispose();
         }
