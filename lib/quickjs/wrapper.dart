@@ -53,8 +53,12 @@ Pointer<JSValue> _jsGetPropertyValue(
   return jsProp;
 }
 
-Pointer<JSValue> _dartToJs(Pointer<JSContext> ctx, dynamic val,
-    {Map<dynamic, Pointer<JSValue>>? cache}) {
+Pointer<JSValue> _dartToJs(
+  Pointer<JSContext> ctx,
+  dynamic val, {
+  Map<dynamic, Pointer<JSValue>>? cache,
+  void Function()? onFutureSettled,
+}) {
   if (val == null) return jsUNDEFINED();
   if (val is Error) return _dartToJs(ctx, JSError(val, val.stackTrace));
   if (val is Exception) return _dartToJs(ctx, JSError(val));
@@ -81,9 +85,17 @@ Pointer<JSValue> _dartToJs(Pointer<JSContext> ctx, dynamic val,
     res.free();
     rej.free();
     val.then((value) {
-      res.invoke([value]);
+      try {
+        res.invoke([value]);
+      } finally {
+        onFutureSettled?.call();
+      }
     }, onError: (e) {
-      rej.invoke([e]);
+      try {
+        rej.invoke([e]);
+      } finally {
+        onFutureSettled?.call();
+      }
     }).whenComplete(() {
       refRes.free();
       refRej.free();

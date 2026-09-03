@@ -39,16 +39,18 @@ void main() {
 
   test('QuickJS scopes callback arguments to callback completion', () async {
     if (jsRuntime is! QuickJsRuntime2) return;
-    final invokeCallback = jsRuntime
-        .evaluate('(callback) => callback((value) => value * 2)')
-        .rawResult;
+    final invokeCallback = jsRuntime.evaluate('''
+          (callback) => callback((value) => value * 2)
+            .then((returnedCallback) => returnedCallback(21))
+        ''').rawResult;
     dynamic asyncCallback;
     final asyncResult = jsRuntime.callFunction(
       invokeCallback,
       (dynamic callback) async {
         asyncCallback = callback;
         await Future<void>.delayed(Duration.zero);
-        return callback.invoke([21]);
+        expect(callback.invoke([21]), 42);
+        return callback;
       },
     );
 
