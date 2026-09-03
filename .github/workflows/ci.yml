@@ -81,7 +81,7 @@ jobs:
       # and compare its exported symbols against the committed prebuilt .so.
       # Linux is the only platform shipping a committed binary; a stale .so
       # surfaces as 'undefined symbol' on FFI lookup at runtime.
-      - name: Verify committed .so matches fresh build
+      - name: Compare committed .so exports
         run: |
           set -euo pipefail
           cmake -S linux/shared -B build
@@ -96,10 +96,15 @@ jobs:
           fi
           echo "Committed .so exports match fresh build ($(wc -l < /tmp/fresh.exports) symbols)"
 
-      - name: Run QuickJS memory regressions
-        run: dart test test/quickjs_memory_test.dart --concurrency=1
+      - name: Run QuickJS regression suite against fresh build
+        run: dart test --concurrency=1
         env:
           LIBQUICKJSC_PATH: ${{ github.workspace }}/build/libquickjs_c_bridge_plugin.so
+
+      - name: Run QuickJS regression suite against committed .so
+        run: dart test --concurrency=1
+        env:
+          LIBQUICKJSC_PATH: ${{ github.workspace }}/linux/shared/libquickjs_c_bridge_plugin.so
 
       # Always upload the fresh build so a stale .so can be recovered by
       # downloading the artifact and committing it.
