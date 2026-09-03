@@ -259,7 +259,7 @@ extension HandlePromises on JavascriptRuntime {
             final encodedResult = jsonEncode(result);
             cleanup();
             if (completer.isCompleted) return;
-            completer.complete(JsEvalResult(encodedResult, value.rawResult));
+            completer.complete(JsEvalResult(encodedResult, result));
           } catch (error) {
             completeError(error);
           }
