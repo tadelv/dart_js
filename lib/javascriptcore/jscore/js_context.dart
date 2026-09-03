@@ -42,7 +42,7 @@ class JSContext {
     JSContextGroup? group,
     JSClass? globalObjectClass,
   }) : this._pointer = JSContextRef.jSGlobalContextCreateInGroup(
-            group == null ? JSContextRef.jSContextGroupCreate() : group.pointer,
+            group == null ? nullptr : group.pointer,
             globalObjectClass == null ? nullptr : globalObjectClass.pointer);
 
   /// Retains a global JavaScript execution context.

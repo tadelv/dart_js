@@ -153,9 +153,7 @@ XMLHttpRequest.prototype._send_native_callback = function(responseInfo, response
         try {
             this.response = JSON.parse(responseText);
         }
-        catch (e) {
-            error = "Could not parse JSON response: " + responseText;
-        }
+        catch (_) {}
         break;
       default:
         error = "Unsupported responseType: " + responseInfo.responseType;
@@ -206,10 +204,11 @@ XMLHttpRequest.prototype.getAllResponseHeaders = function() {
 };
 XMLHttpRequest.prototype.getResponseHeader = function(name) {
   var ret = "";
+  var lowerName = name.toLowerCase();
   for (var i = 0; i < this._responseHeaders.length; i++) {
     var keyValue = this._responseHeaders[i];
-    if (keyValue[0] !== name) continue;
-    if (ret === "") ret += ", ";
+    if (keyValue[0].toLowerCase() !== lowerName) continue;
+    if (ret !== "") ret += ", ";
     ret += keyValue[1];
   }
   return ret;
@@ -324,16 +323,15 @@ extension JavascriptRuntimeXhrExtension on JavascriptRuntime {
             break;
         }
         if (disposed || !isRuntimeActive) return;
-        var responseText = utf8.decode(response.bodyBytes);
-        try {
-          responseText = jsonEncode(json.decode(responseText));
-        } on Object {}
+        final responseText = utf8.decode(response.bodyBytes);
+        final xhrResponseInfo = XhtmlHttpResponseInfo(
+          statusCode: response.statusCode,
+          statusText: response.reasonPhrase ?? '',
+        );
+        response.headers.forEach(xhrResponseInfo.addResponseHeaders);
         final xhrResult = XmlHttpRequestResponse(
           responseText: responseText,
-          responseInfo: XhtmlHttpResponseInfo(
-            statusCode: response.statusCode,
-            statusText: response.reasonPhrase ?? '',
-          ),
+          responseInfo: xhrResponseInfo,
         );
         final responseInfo = jsonEncode(xhrResult.responseInfo);
         final callback = '''
@@ -450,7 +448,7 @@ class XhtmlHttpResponseInfo {
     return {
       "statusCode": statusCode,
       "statusText": statusText,
-      "responseHeaders": jsonEncode(responseHeaders)
+      "responseHeaders": responseHeaders
     };
   }
 }

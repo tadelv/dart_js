@@ -1,3 +1,10 @@
+# 0.8.6
+
+- upgrade QuickJS to 2026-06-04 and share the engine build across Android and Linux
+- add QuickJS memory diagnostics and regression workloads
+- fix native wrapper ownership, async callback lifetimes, and promise settlement
+- preserve XHR response headers and text while aligning invalid JSON behavior
+
 # 0.8.5
 fix memory leaks reported in https://github.com/abner/flutter_js/issues/153,
 https://github.com/abner/flutter_js/issues/127

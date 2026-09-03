@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:flutter_js/extensions/fetch.dart';
 import 'package:flutter_js/extensions/handle_promises.dart';
 import 'package:flutter_js/extensions/xhr.dart';
 import 'package:flutter_js/javascript_runtime.dart';
@@ -13,12 +14,17 @@ import 'package:http/http.dart' as http;
 import 'package:test/test.dart';
 
 class _TestHttpClient extends http.BaseClient {
+  _TestHttpClient({this.responseBody = '{"value":42}'});
+
+  final String responseBody;
+
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     return http.StreamedResponse(
-      Stream<List<int>>.value(utf8.encode('{"value":42}')),
+      Stream<List<int>>.value(utf8.encode(responseBody)),
       200,
       reasonPhrase: 'OK',
+      headers: {'x-test': 'first', 'x-mode': 'active'},
     );
   }
 }
@@ -128,6 +134,156 @@ void main() {
         expect(
           runtime.evaluate('Object.keys(xhrRequests).length').stringResult,
           '0',
+        );
+      } finally {
+        runtime.dispose();
+        xhrSetHttpClient(null);
+        client.close();
+      }
+    },
+    skip: skipReason,
+  );
+
+  test(
+    'XHR preserves response headers',
+    () async {
+      final runtime = createRuntime();
+      final client = _TestHttpClient();
+      xhrSetHttpClient(client);
+      try {
+        runtime.enableXhr();
+        runtime.evaluate('''
+          var xhrHeaderResult = null;
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', 'https://example.test');
+          xhr.onload = function() {
+            var all = xhr.getAllResponseHeaders().toLowerCase();
+            xhrHeaderResult = {
+              all: all.indexOf('x-test: first\\r\\n') !== -1 &&
+                  all.indexOf('x-mode: active\\r\\n') !== -1,
+              one: xhr.getResponseHeader('X-Test')
+            };
+          };
+          xhr.send();
+        ''');
+
+        await Future<void>.delayed(Duration(milliseconds: 200));
+        expect(
+          jsonDecode(
+            runtime.evaluate('JSON.stringify(xhrHeaderResult)').stringResult,
+          ),
+          {'all': true, 'one': 'first'},
+        );
+      } finally {
+        runtime.dispose();
+        xhrSetHttpClient(null);
+        client.close();
+      }
+    },
+    skip: skipReason,
+  );
+
+  test(
+    'XHR preserves decoded response text',
+    () async {
+      const responseBody = '{\n  "value": 42\n}';
+      final runtime = createRuntime();
+      final client = _TestHttpClient(responseBody: responseBody);
+      xhrSetHttpClient(client);
+      try {
+        runtime.enableXhr();
+        runtime.evaluate('''
+          var xhrResponseText = null;
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', 'https://example.test');
+          xhr.onload = function() { xhrResponseText = xhr.responseText; };
+          xhr.send();
+        ''');
+
+        await Future<void>.delayed(Duration(milliseconds: 200));
+        expect(
+          jsonDecode(
+            runtime.evaluate('JSON.stringify(xhrResponseText)').stringResult,
+          ),
+          responseBody,
+        );
+      } finally {
+        runtime.dispose();
+        xhrSetHttpClient(null);
+        client.close();
+      }
+    },
+    skip: skipReason,
+  );
+
+  test(
+    'fetch rejects invalid JSON response bodies',
+    () async {
+      final runtime = usesJavaScriptCore
+          ? JavascriptCoreRuntime()
+          : QuickJsRuntime2(hostPromiseRejectionHandler: (_) {});
+      final client = _TestHttpClient(responseBody: 'not json');
+      xhrSetHttpClient(client);
+      try {
+        runtime.enableFetch();
+        runtime.enableHandlePromises();
+        final promise = runtime.evaluate('''
+          fetch('https://example.test')
+              .then(function(response) { return response.json(); })
+              .then(
+                function() { return 'fulfilled'; },
+                function() { return 'rejected'; }
+              );
+        ''');
+
+        expect(promise.isPromise, isTrue);
+        final result = await runtime.handlePromise(
+          promise,
+          timeout: Duration(seconds: 1),
+        );
+        expect(
+          jsonDecode(result.stringResult),
+          'rejected',
+        );
+      } finally {
+        runtime.dispose();
+        xhrSetHttpClient(null);
+        client.close();
+      }
+    },
+    skip: skipReason,
+  );
+
+  test(
+    'XHR invalid JSON completes with a null response',
+    () async {
+      final runtime = createRuntime();
+      final client = _TestHttpClient(responseBody: 'not json');
+      xhrSetHttpClient(client);
+      try {
+        runtime.enableXhr();
+        runtime.evaluate('''
+          var xhrJsonResult = {load: 0, error: 0, response: 'pending'};
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', 'https://example.test');
+          xhr.responseType = 'json';
+          xhr.onload = function() {
+            xhrJsonResult.load += 1;
+            xhrJsonResult.response = xhr.response;
+          };
+          xhr.onerror = function() {
+            xhrJsonResult.error += 1;
+            xhrJsonResult.response = xhr.response;
+          };
+          xhr.send();
+        ''');
+
+        await Future<void>.delayed(Duration(milliseconds: 200));
+        expect(
+          jsonDecode(
+            runtime.evaluate('JSON.stringify(xhrJsonResult)').stringResult,
+          ),
+          {'load': 1, 'error': 0, 'response': null},
         );
       } finally {
         runtime.dispose();
