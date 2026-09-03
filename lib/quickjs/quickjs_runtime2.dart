@@ -83,12 +83,33 @@ class QuickJsRuntime2 extends JavascriptRuntime {
               ctx,
               pdata[3],
             );
-            return _dartToJs(
-                ctx,
-                func.invoke(
-                  pargs,
-                  _jsToDart(ctx, pdata[0]),
-                ));
+            final thisVal = _jsToDart(ctx, pdata[0]);
+            JSRef.dupRecursive(pargs);
+            JSRef.dupRecursive(thisVal);
+            var released = false;
+            void releaseArguments() {
+              if (released) return;
+              released = true;
+              JSRef.freeRecursive(pargs);
+              JSRef.freeRecursive(thisVal);
+            }
+
+            try {
+              final result = func.invoke(pargs, thisVal);
+              if (result is Future) {
+                return _dartToJs(
+                  ctx,
+                  result,
+                  onFutureSettled: releaseArguments,
+                );
+              }
+              final converted = _dartToJs(ctx, result);
+              releaseArguments();
+              return converted;
+            } catch (_) {
+              releaseArguments();
+              rethrow;
+            }
           case JSChannelType.MODULE:
             if (moduleHandler == null) throw JSError('No ModuleHandler');
             final ret = moduleHandler!(

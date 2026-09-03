@@ -29,10 +29,20 @@ class _DartFunction extends JSInvokable {
     /// wrap this into function
     final passThis =
         RegExp('{.*thisVal.*}').hasMatch(_func.runtimeType.toString());
-    final ret =
-        Function.apply(_func, args, passThis ? {#thisVal: thisVal} : null);
-    JSRef.freeRecursive(args);
-    JSRef.freeRecursive(thisVal);
+    void releaseArguments() {
+      JSRef.freeRecursive(args);
+      JSRef.freeRecursive(thisVal);
+    }
+
+    late final dynamic ret;
+    try {
+      ret = Function.apply(_func, args, passThis ? {#thisVal: thisVal} : null);
+    } catch (_) {
+      releaseArguments();
+      rethrow;
+    }
+    if (ret is Future) return ret.whenComplete(releaseArguments);
+    releaseArguments();
     return ret;
   }
 
