@@ -15,13 +15,9 @@ globalThis.fetch = function fetch(url, options) {
       status: request.status,
       url: request.responseURL,
       text: () => Promise.resolve(request.responseText),
-      json: () => {
-        try {
-          return Promise.resolve(JSON.parse(request.responseText));
-        } catch (_) {
-          return Promise.resolve(request.responseText);
-        }
-      },
+      json: () => Promise.resolve().then(
+        () => JSON.parse(request.responseText)
+      ),
       blob: () => Promise.resolve(new Blob([request.response])),
       clone: response,
       headers: {

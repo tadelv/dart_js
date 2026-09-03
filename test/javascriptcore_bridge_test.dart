@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:flutter_js/extensions/fetch.dart';
 import 'package:flutter_js/extensions/handle_promises.dart';
 import 'package:flutter_js/extensions/xhr.dart';
 import 'package:flutter_js/javascript_runtime.dart';
@@ -205,6 +206,44 @@ void main() {
             runtime.evaluate('JSON.stringify(xhrResponseText)').stringResult,
           ),
           responseBody,
+        );
+      } finally {
+        runtime.dispose();
+        xhrSetHttpClient(null);
+        client.close();
+      }
+    },
+    skip: skipReason,
+  );
+
+  test(
+    'fetch rejects invalid JSON response bodies',
+    () async {
+      final runtime = usesJavaScriptCore
+          ? JavascriptCoreRuntime()
+          : QuickJsRuntime2(hostPromiseRejectionHandler: (_) {});
+      final client = _TestHttpClient(responseBody: 'not json');
+      xhrSetHttpClient(client);
+      try {
+        runtime.enableFetch();
+        runtime.enableHandlePromises();
+        final promise = runtime.evaluate('''
+          fetch('https://example.test')
+              .then(function(response) { return response.json(); })
+              .then(
+                function() { return 'fulfilled'; },
+                function() { return 'rejected'; }
+              );
+        ''');
+
+        expect(promise.isPromise, isTrue);
+        final result = await runtime.handlePromise(
+          promise,
+          timeout: Duration(seconds: 1),
+        );
+        expect(
+          jsonDecode(result.stringResult),
+          'rejected',
         );
       } finally {
         runtime.dispose();
