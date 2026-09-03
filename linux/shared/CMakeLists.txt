@@ -29,3 +29,27 @@ target_link_libraries(quickjs_c_bridge_plugin PRIVATE
   dl
   pthread
 )
+
+include(CTest)
+if(BUILD_TESTING)
+  set(VALUE_WRAPPER_TEST_ENGINE_SOURCES ${QUICKJS_ENGINE_SOURCES})
+  list(REMOVE_ITEM VALUE_WRAPPER_TEST_ENGINE_SOURCES
+    "${QUICKJS_BRIDGE_DIR}/libfastdev_quickjs_runtime.cpp"
+  )
+  add_executable(value_wrapper_ownership_test
+    "${PLUGIN_PACKAGE_DIR}/quickjs/bridge/cxx/tests/value_wrapper_ownership_test.cpp"
+    ${VALUE_WRAPPER_TEST_ENGINE_SOURCES}
+  )
+  target_include_directories(value_wrapper_ownership_test PRIVATE
+    ${QUICKJS_ENGINE_INCLUDE_DIRS}
+  )
+  target_compile_definitions(value_wrapper_ownership_test PRIVATE
+    ${QUICKJS_ENGINE_DEFS}
+  )
+  target_link_libraries(value_wrapper_ownership_test PRIVATE
+    m
+    dl
+    pthread
+  )
+  add_test(NAME value_wrapper_ownership COMMAND value_wrapper_ownership_test)
+endif()

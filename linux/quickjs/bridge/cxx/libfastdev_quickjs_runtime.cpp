@@ -391,6 +391,13 @@ extern "C"
         return m;
     }
 
+    static JSValue takeValue(JSValue *value)
+    {
+        JSValue result = *value;
+        delete value;
+        return result;
+    }
+
     JSValue js_channel(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic, JSValue *func_data)
     {
         JSRuntime *rt = JS_GetRuntime(ctx);
@@ -400,7 +407,7 @@ extern "C"
         data[1] = &argc;
         data[2] = argv;
         data[3] = func_data;
-        return *(JSValue *)opaque->channel(ctx, JSChannelType_METHON, data);
+        return takeValue(static_cast<JSValue *>(opaque->channel(ctx, JSChannelType_METHON, data)));
     }
 
     void js_promise_rejection_tracker(JSContext *ctx, JSValueConst promise,
@@ -678,7 +685,7 @@ extern "C"
     DLLEXPORT int32_t jsDefinePropertyValue(JSContext *ctx, JSValueConst *this_obj,
                                             JSAtom prop, JSValue *val, int32_t flags)
     {
-        return JS_DefinePropertyValue(ctx, *this_obj, prop, *val, flags);
+        return JS_DefinePropertyValue(ctx, *this_obj, prop, takeValue(val), flags);
     }
 
     DLLEXPORT void jsFreeAtom(JSContext *ctx, JSAtom v)
