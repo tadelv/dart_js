@@ -255,6 +255,46 @@ void main() {
   );
 
   test(
+    'XHR invalid JSON completes with a null response',
+    () async {
+      final runtime = createRuntime();
+      final client = _TestHttpClient(responseBody: 'not json');
+      xhrSetHttpClient(client);
+      try {
+        runtime.enableXhr();
+        runtime.evaluate('''
+          var xhrJsonResult = {load: 0, error: 0, response: 'pending'};
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', 'https://example.test');
+          xhr.responseType = 'json';
+          xhr.onload = function() {
+            xhrJsonResult.load += 1;
+            xhrJsonResult.response = xhr.response;
+          };
+          xhr.onerror = function() {
+            xhrJsonResult.error += 1;
+            xhrJsonResult.response = xhr.response;
+          };
+          xhr.send();
+        ''');
+
+        await Future<void>.delayed(Duration(milliseconds: 200));
+        expect(
+          jsonDecode(
+            runtime.evaluate('JSON.stringify(xhrJsonResult)').stringResult,
+          ),
+          {'load': 1, 'error': 0, 'response': null},
+        );
+      } finally {
+        runtime.dispose();
+        xhrSetHttpClient(null);
+        client.close();
+      }
+    },
+    skip: skipReason,
+  );
+
+  test(
     'JavaScript bridge deferred requests resolve, reject, and time out',
     () async {
       final runtime = createRuntime();
