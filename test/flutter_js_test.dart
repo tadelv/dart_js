@@ -121,6 +121,14 @@ void main() {
     }
   });
 
+  test('QuickJS frees the runtime when context allocation fails', () {
+    if (jsRuntime is! QuickJsRuntime2) return;
+    final initialRuntimeCount = runtimeOpaques.length;
+
+    expect(() => QuickJsRuntime2(memoryLimit: 1), throwsException);
+    expect(runtimeOpaques.length, initialRuntimeCount);
+  });
+
   test('QuickJS interrupts execution after its timeout', () {
     if (jsRuntime is! QuickJsRuntime2) return;
     final runtime = QuickJsRuntime2(timeout: 20);

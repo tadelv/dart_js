@@ -424,6 +424,8 @@ extern "C"
     DLLEXPORT JSRuntime *jsNewRuntime(JSChannel channel, int64_t timeout)
     {
         JSRuntime *rt = JS_NewRuntime();
+        if (rt == nullptr)
+            return nullptr;
         RuntimeOpaque *opaque = new RuntimeOpaque{channel, timeout, {}};
         JS_SetRuntimeOpaque(rt, opaque);
         if (timeout > 0)
