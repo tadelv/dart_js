@@ -156,8 +156,15 @@ class QuickJsRuntime2 extends JavascriptRuntime {
     if (stackSize > 0) jsSetMaxStackSize(rt, stackSize);
     final memoryLimit = this.memoryLimit ?? 0;
     if (memoryLimit > 0) jsSetMemoryLimit(rt, memoryLimit);
+    final Pointer<JSContext> ctx;
+    try {
+      ctx = jsNewContext(rt);
+    } catch (_) {
+      jsFreeRuntime(rt);
+      rethrow;
+    }
     _rt = rt;
-    _ctx = jsNewContext(rt);
+    _ctx = ctx;
   }
 
   QuickJsMemoryUsage get memoryUsage {

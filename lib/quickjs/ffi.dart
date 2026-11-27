@@ -239,6 +239,7 @@ Pointer<JSRuntime> jsNewRuntime(
   ReceivePort port,
 ) {
   final rt = _jsNewRuntime(Pointer.fromFunction(channelDispacher), timeout);
+  if (rt.address == 0) throw StateError('QuickJS runtime allocation failed');
   runtimeOpaques[rt] = _RuntimeOpaque(callback, port);
   return rt;
 }
